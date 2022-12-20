@@ -1,0 +1,94 @@
+     1                                  SECTION .data
+     2                                  
+     3 00000000 48656C6C6F20776F72-     message:	db 'Hello world',0xA,0dh,"$"
+     4 00000009 6C640A0D24         
+     5 0000000E 0000                    screenX:	dw 0x0
+     6 00000010 0000                    screenY:	dw 0x0
+     7                                  
+     8 00000012 0000                    draw_fill_rect_w:	dw 0x0
+     9 00000014 0000                    draw_fill_rect_w_c:	dw 0x0
+    10 00000016 0000                    draw_fill_rect_h:	dw 0x0
+    11                                  
+    12                                  
+    13                                  SECTION .bss
+    14 00000000 <res 0000000C>          function_coefficients: resw 6
+    15                                  
+    16                                  SECTION .text
+    17                                  
+    18                                  
+    19                                  global main
+    20                                  	 bits 16		;It's 16bit (for DOS)
+    21                                  	 org 0x100	  	;It's a .COM program (Start program at offset 100h)
+    22 00000000 E90000                  	 jmp main
+    23                                  
+    24                                  
+    25                                  main:
+    26                                  	;Video BIOS
+    27 00000003 B400                    	mov AH, 0x0		;Set video mode
+    28 00000005 B012                    	mov AL, 0x12	;640x480 16 color graphics (VGA)
+    29 00000007 CD10                    	int 10h
+    30                                  
+    31 00000009 C706[0E00]4001          	mov word [screenX], 0x140
+    32 0000000F C706[1000]F000          	mov word [screenY], 0x0F0
+    33 00000015 C706[1200]0A00          	mov word [draw_fill_rect_w], 0xA
+    34 0000001B C706[1600]1E00          	mov word [draw_fill_rect_h], 0x1E
+    35 00000021 E80900                  	call DrawFilledRectangle
+    36                                  
+    37                                  ;	inc word [screenX]
+    38                                  ;	inc word [screenY]
+    39                                  ;	call DrawPixel
+    40                                  
+    41 00000024 BA[0000]                	mov DX, message		; Start address of message
+    42 00000027 B409                    	mov AH, 09			; Prepare for screen display
+    43 00000029 CD21                    	int 21h				; DOS interrupt 21h
+    44 0000002B CD20                    	int 20h				; Terminate program
+    45                                  
+    46                                  
+    47                                  DrawFilledRectangle:	;draw_fill_rect_w, draw_fill_rect_h, screenX, screenY
+    48 0000002D C706[1400]0000          	mov word [draw_fill_rect_w_c], 0
+    49                                  
+    50                                  	DrawVerticalLine_ver_loop:
+    51                                  
+    52 00000033 813E[1600]0000          		cmp word [draw_fill_rect_h], 0
+    53 00000039 7E37                    		jle DrawVerticalLine_end
+    54                                  
+    55                                  		DrawVerticalLine_hor_loop:
+    56                                  
+    57 0000003B 8B36[1400]              		mov SI, [draw_fill_rect_w_c]
+    58 0000003F 8B3E[1200]              		mov DI, [draw_fill_rect_w]
+    59 00000043 39FE                    		cmp SI, DI
+    60 00000045 740D                    		je DrawVerticalLine_hor_end
+    61                                  
+    62 00000047 E82900                  		call DrawPixel
+    63 0000004A FF06[1400]              		inc word [draw_fill_rect_w_c]
+    64 0000004E FF06[0E00]              		inc word [screenX]
+    65 00000052 EBE7                    		jmp DrawVerticalLine_hor_loop
+    66                                  
+    67                                  		DrawVerticalLine_hor_end:
+    68 00000054 C706[1400]0000          		mov word [draw_fill_rect_w_c], 0
+    69 0000005A 8B36[0E00]              		mov SI, [screenX]
+    70 0000005E 8B3E[1200]              		mov DI, [draw_fill_rect_w]
+    71 00000062 29FE                    		sub SI, DI
+    72 00000064 8936[0E00]              		mov word [screenX], SI
+    73 00000068 FF0E[1600]              		dec word [draw_fill_rect_h]
+    74 0000006C FF06[1000]              		inc word [screenY]
+    75 00000070 EBC1                    		jmp DrawVerticalLine_ver_loop
+    76                                  
+    77                                  	DrawVerticalLine_end:
+    78 00000072 C3                      	ret
+    79                                  
+    80                                  
+    81                                  
+    82                                  
+    83                                  
+    84                                  
+    85                                  
+    86                                  
+    87                                  DrawPixel:	;screenX, screenY	;Mods AH,AL,BH,CX,DX
+    88 00000073 B40C                    	mov AH, 0x0C		;Write graphics pixel
+    89 00000075 B002                    	mov AL, 0x2			;Color Green
+    90 00000077 B700                    	mov BH, 0	   		;Page 0
+    91 00000079 8B0E[0E00]              	mov CX, [screenX]	;X coord
+    92 0000007D 8B16[1000]              	mov DX, [screenY]	;Y coord
+    93 00000081 CD10                    	int 10h				;Video BIOS
+    94 00000083 C3                      	ret
