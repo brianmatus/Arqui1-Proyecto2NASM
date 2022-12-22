@@ -344,55 +344,52 @@ PrintMainMenu:
 
 ;Prints number passed in stack to buffer set at SI
 NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, symbol.
-	xor DX, DX			;Clean DX since div reg does: mov AX, DX:AX / reg
 	mov AX, [ESP+2]
-	mov CX, 0x0			;for counting chars pushed
+	mov CX, 0x0						;for counting chars pushed
 
-	;TODO special case for 0 as number
+	cmp AX, 0						;Special case: number is 0
+	jne NumberToString_not_zero
+	mov [SI], byte 0x30				;Adds 0, goto exit
+	jmp NumberToString_normal_exit
+
+	NumberToString_not_zero:
+
+	mov DX, [ESP+4]					;Get number sign from stack
+	cmp DX, 0						;Its positive?
+	je NumberToString_not_negative
+	mov [SI], byte 0x2d				;If not, add - to string buffer
+	inc SI
+
+	NumberToString_not_negative:	;Clean DX for divisions
+	xor DX, DX
 
 	NumberToString_reverse_loop:
-		cmp AX, 0
+		cmp AX, 0					;Have we reached 0 as base number?
 		je NumberToString_exit1
-		mov BX, 10			;Prepare divider
-		div BX				;DL contains remainder
-		add DX, '0'			;Make it ascii
-		push DX				;Store it for later
-		xor DX, DX			;Clean DX for net division
-		add CX, byte 0x1	;++ chars pushed
+		mov BX, 10					;Prepare divider
+		div BX						;DL contains remainder
+		add DX, '0'					;Make it ascii
+		push DX						;Store it for later
+		xor DX, DX					;Clean DX for net division
+		add CX, byte 0x1			;++ chars pushed
 		jmp NumberToString_reverse_loop
 
 
-
 	NumberToString_exit1:
-		mov AX, CX
-		mov BX, 2
-		mul BX
-		add AX, 4
-		xor EBX, EBX
-		mov BX, AX
-		add EBX, ESP
-		mov AX, [BX]						;Get sign
-		cmp AX, 0x0							;
-		je NumberToString_sign_positive
-		mov [SI], word '-'
-		inc SI
-		NumberToString_sign_positive:
-
-
 		NumberToString_normal_loop:
-		cmp CX, 0
+		cmp CX, 0					;Are chars still un stack?
 		je NumberToString_normal_exit
-		mov AX, [ESP]
-		mov [SI], AX
+		mov AX, [ESP]				;Get it
+		mov [SI], AX				;Add it to buffer
 		inc SI
-		sub CX, 1
-		add ESP, 2
+		sub CX, 1					;--charsInStack
+		add ESP, 2					;Clean stack
 		jmp NumberToString_normal_loop
 
 	NumberToString_normal_exit:
-		mov [SI], word 0
+		mov [SI], word 0			;null-terminate buffer
 		inc SI
-		mov [SI], byte 0x24, 	;$
+		mov [SI], byte 0x24 		;$ for printing int21hs compliance
 		ret
 
 

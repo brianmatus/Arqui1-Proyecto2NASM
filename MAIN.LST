@@ -596,52 +596,65 @@
    596 000002A9 678B442402              	mov AX, [ESP+2]
    597 000002AE B90000                  	mov CX, 0x0			;for counting chars pushed
    598                                  
-   599                                  	;TODO special case for 0 as number
-   600                                  
-   601                                  	NumberToString_reverse_loop:
-   602 000002B1 3D0000                  		cmp AX, 0
-   603 000002B4 7411                    		je NumberToString_exit1
-   604 000002B6 BB0A00                  		mov BX, 10			;Prepare divider
-   605 000002B9 F7F3                    		div BX				;DL contains remainder
-   606 000002BB 81C23000                		add DX, '0'			;Make it ascii
-   607 000002BF 52                      		push DX				;Store it for later
-   608 000002C0 31D2                    		xor DX, DX			;Clean DX for net division
-   609 000002C2 83C101                  		add CX, byte 0x1	;++ chars pushed
-   610 000002C5 EBEA                    		jmp NumberToString_reverse_loop
+   599 000002B1 3D0000                  	cmp AX, 0
+   600 000002B4 7506                    	jne NumberToString_not_zero
+   601 000002B6 C60430                  	mov [SI], byte 0x30
+   602 000002B9 E94100                  	jmp NumberToString_normal_exit
+   603                                  
+   604                                  	NumberToString_not_zero:
+   605                                  
+   606 000002BC 678B542404              	mov DX, [ESP+4]
+   607 000002C1 81FA0000                	cmp DX, 0
+   608 000002C5 7404                    	je NumberToString_not_negative
+   609 000002C7 C6042D                  	mov [SI], byte 0x2d
+   610 000002CA 46                      	inc SI
    611                                  
-   612                                  
-   613                                  
-   614                                  	NumberToString_exit1:
-   615 000002C7 89C8                    		mov AX, CX
-   616 000002C9 BB0200                  		mov BX, 2
-   617 000002CC F7E3                    		mul BX
-   618 000002CE 050400                  		add AX, 4
-   619 000002D1 6631DB                  		xor EBX, EBX
-   620 000002D4 89C3                    		mov BX, AX
-   621 000002D6 6601E3                  		add EBX, ESP
-   622 000002D9 8B07                    		mov AX, [BX]						;Get sign
-   623 000002DB 3D0000                  		cmp AX, 0x0							;
-   624 000002DE 7405                    		je NumberToString_sign_positive
-   625 000002E0 C7042D00                		mov [SI], word '-'
-   626 000002E4 46                      		inc SI
-   627                                  		NumberToString_sign_positive:
-   628                                  
-   629                                  
-   630                                  		NumberToString_normal_loop:
-   631 000002E5 81F90000                		cmp CX, 0
-   632 000002E9 7414                    		je NumberToString_normal_exit
-   633 000002EB 678B0424                		mov AX, [ESP]
-   634 000002EF 8904                    		mov [SI], AX
-   635 000002F1 46                      		inc SI
-   636 000002F2 81E90100                		sub CX, 1
-   637 000002F6 6681C402000000          		add ESP, 2
-   638 000002FD EBE6                    		jmp NumberToString_normal_loop
-   639                                  
-   640                                  	NumberToString_normal_exit:
-   641 000002FF C7040000                		mov [SI], word 0
-   642 00000303 46                      		inc SI
-   643 00000304 C60424                  		mov [SI], byte 0x24, 	;$
-   644 00000307 C3                      		ret
-   645                                  
-   646                                  
-   647                                  
+   612                                  	NumberToString_not_negative:
+   613 000002CB 31D2                    	xor DX, DX
+   614                                  
+   615                                  	NumberToString_reverse_loop:
+   616 000002CD 3D0000                  		cmp AX, 0
+   617 000002D0 7411                    		je NumberToString_exit1
+   618 000002D2 BB0A00                  		mov BX, 10			;Prepare divider
+   619 000002D5 F7F3                    		div BX				;DL contains remainder
+   620 000002D7 81C23000                		add DX, '0'			;Make it ascii
+   621 000002DB 52                      		push DX				;Store it for later
+   622 000002DC 31D2                    		xor DX, DX			;Clean DX for net division
+   623 000002DE 83C101                  		add CX, byte 0x1	;++ chars pushed
+   624 000002E1 EBEA                    		jmp NumberToString_reverse_loop
+   625                                  
+   626                                  
+   627                                  	NumberToString_exit1:
+   628                                  ;		mov AX, CX
+   629                                  ;		mov BX, 2
+   630                                  ;		mul BX
+   631                                  ;		add AX, 4
+   632                                  ;		xor EBX, EBX
+   633                                  ;		mov BX, AX
+   634                                  ;		add EBX, ESP
+   635                                  ;		mov AX, [BX]						;Get sign
+   636                                  ;		cmp AX, 0x0							;
+   637                                  ;		je NumberToString_sign_positive
+   638                                  ;		mov [SI], word '-'
+   639                                  ;		inc SI
+   640                                  ;		NumberToString_sign_positive:
+   641                                  
+   642                                  
+   643                                  		NumberToString_normal_loop:
+   644 000002E3 81F90000                		cmp CX, 0
+   645 000002E7 7414                    		je NumberToString_normal_exit
+   646 000002E9 678B0424                		mov AX, [ESP]
+   647 000002ED 8904                    		mov [SI], AX
+   648 000002EF 46                      		inc SI
+   649 000002F0 81E90100                		sub CX, 1
+   650 000002F4 6681C402000000          		add ESP, 2
+   651 000002FB EBE6                    		jmp NumberToString_normal_loop
+   652                                  
+   653                                  	NumberToString_normal_exit:
+   654 000002FD C7040000                		mov [SI], word 0
+   655 00000301 46                      		inc SI
+   656 00000302 C60424                  		mov [SI], byte 0x24, 	;$
+   657 00000305 C3                      		ret
+   658                                  
+   659                                  
+   660                                  
