@@ -2,9 +2,10 @@
 
 SECTION .rodata
 
-main_title_s:		db "~~~~~~~~~~~~~~~~~~~~~~~~", "$"
+main_title_s:		db "~~~~~~~~~~~~~~~~~~~~~~~~","$"
 main_title:			db 'Proyecto Unico Assembler - NASM',"$"
-main_inst1:			db "Ingrese el numero de la opcion que desea:", "$"
+main_inst1:			db "Ingrese el numero de la opcion que desea:","$"
+str_press_any:		db "Presione cualquier tecla para continuar","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 main_option1:		db 0x9, "1)Ingresar funcion", 0xA,0dh,"$"
 main_option2:		db 0x9, "2)Imprimir la funcion almacenada", 0xA,0dh,"$"
@@ -24,7 +25,14 @@ enter_coef_2:		db "Ingrese el coeficiente para x^2:","$"
 enter_coef_1:		db "Ingrese el coeficiente para x^1:","$"
 enter_coef_0:		db "Ingrese el coeficiente para x^0:","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-deleteme_test: 		dw 345
+str_x_5:			db "x^5  ","$"
+str_x_4:			db "x^4  ","$"
+str_x_3:			db "x^3  ","$"
+str_x_2:			db "x^2  ","$"
+str_x_1:			db "x^1  ","$"
+str_x_0:			db "  ","$"
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+deleteme_test: 		db "1",0, "$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 options_array:		dw main_option1,main_option2,main_option3,main_option4,main_option5,main_option6,main_option7,main_option8
 text_ln_r:			db 0xA,0dh, "$"
@@ -33,7 +41,7 @@ SECTION .data
 screenX:			dw 0x0
 screenY:			dw 0x0
 
-coef_5: 			dw 0  ; x^5
+coef_5: 			dw 5  ; x^5
 coef_5_sign: 		db 0
 coef_4: 			dw 0  ; x^4
 coef_4_sign: 		db 0
@@ -64,14 +72,6 @@ global _start
 	 org 0x100	  	;It's a .COM program (Start program at offset 100h)
 
 _start:
-	CLEARSCREEN
-
-	mov SI, gen_output_buff
-	push word 0x1
-	push word 345
-	call NumberToString
-
-	call PrintMainMenu
 	call UserMainOptionInput
 
 ;	mov word [screenX], 0x140
@@ -193,6 +193,8 @@ ReadUntilLN:
 
 
 UserMainOptionInput:
+	CLEARSCREEN
+	call PrintMainMenu
 	mov AH, 0x8		;User input without echo
 	int 0x21		;DOS Function Dispatcher
 
@@ -252,7 +254,52 @@ UserMainOptionInput:
 
 
 PrintStoredFunction:
+
+	cmp [coef_5], word 0
+	je PrintStoredFunction_skip_5
+	cmp [coef_5_sign], byte 0
+	je PrintStoredFunction_5_pos
+	MACRO_PRINT_CHAR 0x2d		; -
+	PrintStoredFunction_5_pos:
+	MACRO_PARSE_COEFFICIENT_WITHOUT_SIGN_TO_STRING 5
+	MACRO_PRINT_STRING gen_output_buff
+	MACRO_PRINT_STRING str_x_5
+
+	PrintStoredFunction_skip_5:
+
+	cmp [coef_4], word 0
+	je PrintStoredFunction_skip_4
+	MACRO_PRINT_FUNC_COEF 4
+
+	PrintStoredFunction_skip_4:
+	cmp [coef_3], word 0
+	je PrintStoredFunction_skip_3
+	MACRO_PRINT_FUNC_COEF 3
+
+	PrintStoredFunction_skip_3:
+	cmp [coef_2], word 0
+	je PrintStoredFunction_skip_2
+	MACRO_PRINT_FUNC_COEF 2
+
+	PrintStoredFunction_skip_2:
+	cmp [coef_1], word 0
+	je PrintStoredFunction_skip_1
+	MACRO_PRINT_FUNC_COEF 1
+
+	PrintStoredFunction_skip_1:
+	cmp [coef_0], word 0
+	je PrintStoredFunction_skip_0
+	MACRO_PRINT_FUNC_COEF 0
+
+	PrintStoredFunction_skip_0:
+
+
+	MACRO_PRINT_CHAR 13
+	MACRO_PRINT_CHAR 10
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
 	ret
+
 PrintFunctionDerivative:
 	ret
 PrintFunctionIntegral:
@@ -350,6 +397,7 @@ NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, sy
 	cmp AX, 0						;Special case: number is 0
 	jne NumberToString_not_zero
 	mov [SI], byte 0x30				;Adds 0, goto exit
+	inc SI
 	jmp NumberToString_normal_exit
 
 	NumberToString_not_zero:
