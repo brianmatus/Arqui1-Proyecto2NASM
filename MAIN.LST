@@ -1,94 +1,647 @@
-     1                                  SECTION .data
-     2                                  
-     3 00000000 48656C6C6F20776F72-     message:	db 'Hello world',0xA,0dh,"$"
-     4 00000009 6C640A0D24         
-     5 0000000E 0000                    screenX:	dw 0x0
-     6 00000010 0000                    screenY:	dw 0x0
-     7                                  
-     8 00000012 0000                    draw_fill_rect_w:	dw 0x0
-     9 00000014 0000                    draw_fill_rect_w_c:	dw 0x0
-    10 00000016 0000                    draw_fill_rect_h:	dw 0x0
-    11                                  
-    12                                  
-    13                                  SECTION .bss
-    14 00000000 <res 0000000C>          function_coefficients: resw 6
-    15                                  
-    16                                  SECTION .text
-    17                                  
-    18                                  
-    19                                  global main
-    20                                  	 bits 16		;It's 16bit (for DOS)
-    21                                  	 org 0x100	  	;It's a .COM program (Start program at offset 100h)
-    22 00000000 E90000                  	 jmp main
-    23                                  
-    24                                  
-    25                                  main:
-    26                                  	;Video BIOS
-    27 00000003 B400                    	mov AH, 0x0		;Set video mode
-    28 00000005 B012                    	mov AL, 0x12	;640x480 16 color graphics (VGA)
-    29 00000007 CD10                    	int 10h
-    30                                  
-    31 00000009 C706[0E00]4001          	mov word [screenX], 0x140
-    32 0000000F C706[1000]F000          	mov word [screenY], 0x0F0
-    33 00000015 C706[1200]0A00          	mov word [draw_fill_rect_w], 0xA
-    34 0000001B C706[1600]1E00          	mov word [draw_fill_rect_h], 0x1E
-    35 00000021 E80900                  	call DrawFilledRectangle
-    36                                  
-    37                                  ;	inc word [screenX]
-    38                                  ;	inc word [screenY]
-    39                                  ;	call DrawPixel
+     1                                  %include "code/macros.asm"
+     2                              <1> %macro CLEARSCREEN 0
+     3                              <1> ;Video BIOS
+     4                              <1> mov AH, 0x0		;Set video mode
+     5                              <1> mov AL, 0x12	;640x480 16 color graphics (VGA)
+     6                              <1> int 0x10
+     7                              <1> %endmacro
+     8                              <1> 
+     9                              <1> 
+    10                              <1> %macro MACRO_PRINT_STRING 1
+    11                              <1> 	mov AH, 0x9 			; Print String
+    12                              <1> 	mov DX, %1	; Start address of message
+    13                              <1> 	int 0x21
+    14                              <1> %endmacro
+    15                              <1> 
+    16                              <1> 
+    17                              <1> %macro MACRO_PARSE_STRING_BUFFER 1
+    18                              <1> 	mov SI, %1		;Parameter for Parse String
+    19                              <1> 	call ParseString
+    20                              <1> 	mov AH, 0x9
+    21                              <1> 	mov DX, text_ln_r
+    22                              <1> 	int 0x21
+    23                              <1> %endmacro
+    24                              <1> 
+    25                              <1> 
+    26                              <1> 
+    27                              <1> %macro MACRO_ENTER_COEFFICIENT 1
+    28                              <1> 	EnterFunctionCoefficients_coef_%1:
+    29                              <1> 	MACRO_PRINT_STRING enter_coef_%1
+    30                              <1> 	call ReadUntilLN
+    31                              <1> 	MACRO_PARSE_STRING_BUFFER inStrBuf
+    32                              <1> 	cmp CX, 0x1
+    33                              <1> 	jne EnterFunctionCoefficients_coef_%1_ok
+    34                              <1> 	MACRO_PRINT_STRING input_error_2
+    35                              <1> 	jmp EnterFunctionCoefficients_coef_%1
+    36                              <1> 	EnterFunctionCoefficients_coef_%1_ok:
+    37                              <1> 	mov [coef_%1], AX
+    38                              <1> 	mov [coef_%1_sign], BX
+    39                              <1> %endmacro
     40                                  
-    41 00000024 BA[0000]                	mov DX, message		; Start address of message
-    42 00000027 B409                    	mov AH, 09			; Prepare for screen display
-    43 00000029 CD21                    	int 21h				; DOS interrupt 21h
-    44 0000002B CD20                    	int 20h				; Terminate program
-    45                                  
-    46                                  
-    47                                  DrawFilledRectangle:	;draw_fill_rect_w, draw_fill_rect_h, screenX, screenY
-    48 0000002D C706[1400]0000          	mov word [draw_fill_rect_w_c], 0
-    49                                  
-    50                                  	DrawVerticalLine_ver_loop:
-    51                                  
-    52 00000033 813E[1600]0000          		cmp word [draw_fill_rect_h], 0
-    53 00000039 7E37                    		jle DrawVerticalLine_end
-    54                                  
-    55                                  		DrawVerticalLine_hor_loop:
-    56                                  
-    57 0000003B 8B36[1400]              		mov SI, [draw_fill_rect_w_c]
-    58 0000003F 8B3E[1200]              		mov DI, [draw_fill_rect_w]
-    59 00000043 39FE                    		cmp SI, DI
-    60 00000045 740D                    		je DrawVerticalLine_hor_end
-    61                                  
-    62 00000047 E82900                  		call DrawPixel
-    63 0000004A FF06[1400]              		inc word [draw_fill_rect_w_c]
-    64 0000004E FF06[0E00]              		inc word [screenX]
-    65 00000052 EBE7                    		jmp DrawVerticalLine_hor_loop
-    66                                  
-    67                                  		DrawVerticalLine_hor_end:
-    68 00000054 C706[1400]0000          		mov word [draw_fill_rect_w_c], 0
-    69 0000005A 8B36[0E00]              		mov SI, [screenX]
-    70 0000005E 8B3E[1200]              		mov DI, [draw_fill_rect_w]
-    71 00000062 29FE                    		sub SI, DI
-    72 00000064 8936[0E00]              		mov word [screenX], SI
-    73 00000068 FF0E[1600]              		dec word [draw_fill_rect_h]
-    74 0000006C FF06[1000]              		inc word [screenY]
-    75 00000070 EBC1                    		jmp DrawVerticalLine_ver_loop
-    76                                  
-    77                                  	DrawVerticalLine_end:
-    78 00000072 C3                      	ret
-    79                                  
-    80                                  
-    81                                  
-    82                                  
-    83                                  
-    84                                  
-    85                                  
-    86                                  
-    87                                  DrawPixel:	;screenX, screenY	;Mods AH,AL,BH,CX,DX
-    88 00000073 B40C                    	mov AH, 0x0C		;Write graphics pixel
-    89 00000075 B002                    	mov AL, 0x2			;Color Green
-    90 00000077 B700                    	mov BH, 0	   		;Page 0
-    91 00000079 8B0E[0E00]              	mov CX, [screenX]	;X coord
-    92 0000007D 8B16[1000]              	mov DX, [screenY]	;Y coord
-    93 00000081 CD10                    	int 10h				;Video BIOS
-    94 00000083 C3                      	ret
+    41                                  SECTION .rodata
+    42                                  
+    43 00000000 7E7E7E7E7E7E7E7E7E-     main_title_s:		db "~~~~~~~~~~~~~~~~~~~~~~~~", "$"
+    44 00000009 7E7E7E7E7E7E7E7E7E-
+    45 00000012 7E7E7E7E7E7E24     
+    46 00000019 50726F796563746F20-     main_title:			db 'Proyecto Unico Assembler - NASM',"$"
+    47 00000022 556E69636F20417373-
+    48 0000002B 656D626C6572202D20-
+    49 00000034 4E41534D24         
+    50 00000039 496E67726573652065-     main_inst1:			db "Ingrese el numero de la opcion que desea:", "$"
+    51 00000042 6C206E756D65726F20-
+    52 0000004B 6465206C61206F7063-
+    53 00000054 696F6E207175652064-
+    54 0000005D 657365613A24       
+    55                                  ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    56 00000063 093129496E67726573-     main_option1:		db 0x9, "1)Ingresar funcion", 0xA,0dh,"$"
+    57 0000006C 61722066756E63696F-
+    58 00000075 6E0A0D24           
+    59 00000079 093229496D7072696D-     main_option2:		db 0x9, "2)Imprimir la funcion almacenada", 0xA,0dh,"$"
+    60 00000082 6972206C612066756E-
+    61 0000008B 63696F6E20616C6D61-
+    62 00000094 63656E6164610A0D24 
+    63 0000009D 093329496D7072696D-     main_option3:		db 0x9, "3)Imprimir la la derivada de la funcion almacenada", 0xA,0x0D,"$"
+    64 000000A6 6972206C61206C6120-
+    65 000000AF 646572697661646120-
+    66 000000B8 6465206C612066756E-
+    67 000000C1 63696F6E20616C6D61-
+    68 000000CA 63656E6164610A0D24 
+    69 000000D3 093429496D7072696D-     main_option4:		db 0x9, "4)Imprimir la la integrada de la funcion almacenada", 0xA,0dh,"$"
+    70 000000DC 6972206C61206C6120-
+    71 000000E5 696E74656772616461-
+    72 000000EE 206465206C61206675-
+    73 000000F7 6E63696F6E20616C6D-
+    74 00000100 6163656E6164610A0D-
+    75 00000109 24                 
+    76 0000010A 093529477261666963-     main_option5:		db 0x9, "5)Graficar funcion original, derivada o integral", 0xA,0dh,"$"
+    77 00000113 61722066756E63696F-
+    78 0000011C 6E206F726967696E61-
+    79 00000125 6C2C20646572697661-
+    80 0000012E 6461206F20696E7465-
+    81 00000137 6772616C0A0D24     
+    82 0000013E 093629456E636F6E74-     main_option6:		db 0x9, "6)Encontrar ceros mediante metodo de Newton", 0xA,0dh,"$"
+    83 00000147 726172206365726F73-
+    84 00000150 206D656469616E7465-
+    85 00000159 206D65746F646F2064-
+    86 00000162 65204E6577746F6E0A-
+    87 0000016B 0D24               
+    88 0000016D 093729456E636F6E74-     main_option7:		db 0x9, "7)Encontrar ceros mediante metodo de Steffensen", 0xA,0dh,"$"
+    89 00000176 726172206365726F73-
+    90 0000017F 206D656469616E7465-
+    91 00000188 206D65746F646F2064-
+    92 00000191 65205374656666656E-
+    93 0000019A 73656E0A0D24       
+    94 000001A0 09382953616C69720A-     main_option8:		db 0x9, "8)Salir", 0xA,0dh,"$"
+    95 000001A9 0D24               
+    96 000001AB 4C61206F7063696F6E-     input_error_1:		db "La opcion ingresada no es valida", 0xA,0dh,"$"
+    97 000001B4 20696E677265736164-
+    98 000001BD 61206E6F2065732076-
+    99 000001C6 616C6964610A0D24   
+   100 000001CE 456C20746578746F20-     input_error_2:		db "El texto ingresado no es valido", 0xA,0dh,"$"
+   101 000001D7 696E6772657361646F-
+   102 000001E0 206E6F206573207661-
+   103 000001E9 6C69646F0A0D24     
+   104                                  ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+   105 000001F0 496E67726573652065-     enter_coef_5:		db "Ingrese el coeficiente para x^5:","$"
+   106 000001F9 6C20636F6566696369-
+   107 00000202 656E74652070617261-
+   108 0000020B 20785E353A24       
+   109 00000211 496E67726573652065-     enter_coef_4:		db "Ingrese el coeficiente para x^4:","$"
+   110 0000021A 6C20636F6566696369-
+   111 00000223 656E74652070617261-
+   112 0000022C 20785E343A24       
+   113 00000232 496E67726573652065-     enter_coef_3:		db "Ingrese el coeficiente para x^3:","$"
+   114 0000023B 6C20636F6566696369-
+   115 00000244 656E74652070617261-
+   116 0000024D 20785E333A24       
+   117 00000253 496E67726573652065-     enter_coef_2:		db "Ingrese el coeficiente para x^2:","$"
+   118 0000025C 6C20636F6566696369-
+   119 00000265 656E74652070617261-
+   120 0000026E 20785E323A24       
+   121 00000274 496E67726573652065-     enter_coef_1:		db "Ingrese el coeficiente para x^1:","$"
+   122 0000027D 6C20636F6566696369-
+   123 00000286 656E74652070617261-
+   124 0000028F 20785E313A24       
+   125 00000295 496E67726573652065-     enter_coef_0:		db "Ingrese el coeficiente para x^0:","$"
+   126 0000029E 6C20636F6566696369-
+   127 000002A7 656E74652070617261-
+   128 000002B0 20785E303A24       
+   129                                  ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+   130 000002B6 5901                    deleteme_test: 		dw 345
+   131                                  ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+   132 000002B8 [6300][7900][9D00]-     options_array:		dw main_option1,main_option2,main_option3,main_option4,main_option5,main_option6,main_option7,main_option8
+   133 000002BE [D300][0A01][3E01]-
+   134 000002C4 [6D01][A001]       
+   135 000002C8 0A0D24                  text_ln_r:			db 0xA,0dh, "$"
+   136                                  
+   137                                  SECTION .data
+   138 00000000 0000                    screenX:			dw 0x0
+   139 00000002 0000                    screenY:			dw 0x0
+   140                                  
+   141 00000004 0000                    coef_5: 			dw 0  ; x^5
+   142 00000006 00                      coef_5_sign: 		db 0
+   143 00000007 0000                    coef_4: 			dw 0  ; x^4
+   144 00000009 00                      coef_4_sign: 		db 0
+   145 0000000A 0000                    coef_3: 			dw 0 ; x^3
+   146 0000000C 00                      coef_3_sign: 		db 0
+   147 0000000D 0000                    coef_2: 			dw 0  ; x^2
+   148 0000000F 00                      coef_2_sign: 		db 0
+   149 00000010 0000                    coef_1: 			dw 0  ; x
+   150 00000012 00                      coef_1_sign: 		db 0
+   151 00000013 0000                    coef_0: 			dw 0  ; constant
+   152 00000015 00                      coef_0_sign: 		db 0
+   153                                  
+   154 00000016 0000                    draw_fill_rect_w:	dw 0x0
+   155 00000018 0000                    draw_fill_rect_w_c:	dw 0x0
+   156 0000001A 0000                    draw_fill_rect_h:	dw 0x0
+   157                                  
+   158 0000001C 0000                    inStrBuf_p:				dw 0x0
+   159 0000001E 00<rept>                inStrBuf:  				times 30 db 0x0
+   160 0000003C 00<rept>                gen_output_buff: 		times 30 db 0x0
+   161                                  
+   162                                  SECTION .bss
+   163                                  
+   164                                  
+   165                                  SECTION .text
+   166                                  
+   167                                  global _start
+   168                                  	 bits 16		;It's 16bit (for DOS)
+   169                                  	 org 0x100	  	;It's a .COM program (Start program at offset 100h)
+   170                                  
+   171                                  _start:
+   172                                  	CLEARSCREEN
+   173                              <1> 
+   174 00000000 B400                <1> mov AH, 0x0
+   175 00000002 B012                <1> mov AL, 0x12
+   176 00000004 CD10                <1> int 0x10
+   177                                  
+   178 00000006 BE[3C00]                	mov SI, gen_output_buff
+   179 00000009 680100                  	push word 0x1
+   180 0000000C 685901                  	push word 345
+   181 0000000F E89502                  	call NumberToString
+   182                                  
+   183 00000012 E86302                  	call PrintMainMenu
+   184 00000015 E89201                  	call UserMainOptionInput
+   185                                  
+   186                                  ;	mov word [screenX], 0x140
+   187                                  ;	mov word [screenY], 0x0F0
+   188                                  ;	mov word [draw_fill_rect_w], 0x1E
+   189                                  ;	mov word [draw_fill_rect_h], 0xA
+   190                                  ;	call DrawFilledRectangle
+   191 00000018 E8F301                  	call ExitApplication
+   192                                  
+   193                                  
+   194                                  
+   195                                  EnterFunctionCoefficients:
+   196                                  
+   197                                  	;COEF x^5
+   198                                  	MACRO_ENTER_COEFFICIENT 5
+   199                              <1>  EnterFunctionCoefficients_coef_%1:
+   200                              <1>  MACRO_PRINT_STRING enter_coef_%1
+   201 0000001B B409                <2>  mov AH, 0x9
+   202 0000001D BA[F001]            <2>  mov DX, %1
+   203 00000020 CD21                <2>  int 0x21
+   204 00000022 E85801              <1>  call ReadUntilLN
+   205                              <1>  MACRO_PARSE_STRING_BUFFER inStrBuf
+   206 00000025 BE[1E00]            <2>  mov SI, %1
+   207 00000028 E8FF00              <2>  call ParseString
+   208 0000002B B409                <2>  mov AH, 0x9
+   209 0000002D BA[C802]            <2>  mov DX, text_ln_r
+   210 00000030 CD21                <2>  int 0x21
+   211 00000032 81F90100            <1>  cmp CX, 0x1
+   212 00000036 7509                <1>  jne EnterFunctionCoefficients_coef_%1_ok
+   213                              <1>  MACRO_PRINT_STRING input_error_2
+   214 00000038 B409                <2>  mov AH, 0x9
+   215 0000003A BA[CE01]            <2>  mov DX, %1
+   216 0000003D CD21                <2>  int 0x21
+   217 0000003F EBDA                <1>  jmp EnterFunctionCoefficients_coef_%1
+   218                              <1>  EnterFunctionCoefficients_coef_%1_ok:
+   219 00000041 A3[0400]            <1>  mov [coef_%1], AX
+   220 00000044 891E[0600]          <1>  mov [coef_%1_sign], BX
+   221                                  	;COEF x^4
+   222                                  	MACRO_ENTER_COEFFICIENT 4
+   223                              <1>  EnterFunctionCoefficients_coef_%1:
+   224                              <1>  MACRO_PRINT_STRING enter_coef_%1
+   225 00000048 B409                <2>  mov AH, 0x9
+   226 0000004A BA[1102]            <2>  mov DX, %1
+   227 0000004D CD21                <2>  int 0x21
+   228 0000004F E82B01              <1>  call ReadUntilLN
+   229                              <1>  MACRO_PARSE_STRING_BUFFER inStrBuf
+   230 00000052 BE[1E00]            <2>  mov SI, %1
+   231 00000055 E8D200              <2>  call ParseString
+   232 00000058 B409                <2>  mov AH, 0x9
+   233 0000005A BA[C802]            <2>  mov DX, text_ln_r
+   234 0000005D CD21                <2>  int 0x21
+   235 0000005F 81F90100            <1>  cmp CX, 0x1
+   236 00000063 7509                <1>  jne EnterFunctionCoefficients_coef_%1_ok
+   237                              <1>  MACRO_PRINT_STRING input_error_2
+   238 00000065 B409                <2>  mov AH, 0x9
+   239 00000067 BA[CE01]            <2>  mov DX, %1
+   240 0000006A CD21                <2>  int 0x21
+   241 0000006C EBDA                <1>  jmp EnterFunctionCoefficients_coef_%1
+   242                              <1>  EnterFunctionCoefficients_coef_%1_ok:
+   243 0000006E A3[0700]            <1>  mov [coef_%1], AX
+   244 00000071 891E[0900]          <1>  mov [coef_%1_sign], BX
+   245                                  	;COEF x^3
+   246                                  	MACRO_ENTER_COEFFICIENT 3
+   247                              <1>  EnterFunctionCoefficients_coef_%1:
+   248                              <1>  MACRO_PRINT_STRING enter_coef_%1
+   249 00000075 B409                <2>  mov AH, 0x9
+   250 00000077 BA[3202]            <2>  mov DX, %1
+   251 0000007A CD21                <2>  int 0x21
+   252 0000007C E8FE00              <1>  call ReadUntilLN
+   253                              <1>  MACRO_PARSE_STRING_BUFFER inStrBuf
+   254 0000007F BE[1E00]            <2>  mov SI, %1
+   255 00000082 E8A500              <2>  call ParseString
+   256 00000085 B409                <2>  mov AH, 0x9
+   257 00000087 BA[C802]            <2>  mov DX, text_ln_r
+   258 0000008A CD21                <2>  int 0x21
+   259 0000008C 81F90100            <1>  cmp CX, 0x1
+   260 00000090 7509                <1>  jne EnterFunctionCoefficients_coef_%1_ok
+   261                              <1>  MACRO_PRINT_STRING input_error_2
+   262 00000092 B409                <2>  mov AH, 0x9
+   263 00000094 BA[CE01]            <2>  mov DX, %1
+   264 00000097 CD21                <2>  int 0x21
+   265 00000099 EBDA                <1>  jmp EnterFunctionCoefficients_coef_%1
+   266                              <1>  EnterFunctionCoefficients_coef_%1_ok:
+   267 0000009B A3[0A00]            <1>  mov [coef_%1], AX
+   268 0000009E 891E[0C00]          <1>  mov [coef_%1_sign], BX
+   269                                  	;COEF x^2
+   270                                  	MACRO_ENTER_COEFFICIENT 2
+   271                              <1>  EnterFunctionCoefficients_coef_%1:
+   272                              <1>  MACRO_PRINT_STRING enter_coef_%1
+   273 000000A2 B409                <2>  mov AH, 0x9
+   274 000000A4 BA[5302]            <2>  mov DX, %1
+   275 000000A7 CD21                <2>  int 0x21
+   276 000000A9 E8D100              <1>  call ReadUntilLN
+   277                              <1>  MACRO_PARSE_STRING_BUFFER inStrBuf
+   278 000000AC BE[1E00]            <2>  mov SI, %1
+   279 000000AF E87800              <2>  call ParseString
+   280 000000B2 B409                <2>  mov AH, 0x9
+   281 000000B4 BA[C802]            <2>  mov DX, text_ln_r
+   282 000000B7 CD21                <2>  int 0x21
+   283 000000B9 81F90100            <1>  cmp CX, 0x1
+   284 000000BD 7509                <1>  jne EnterFunctionCoefficients_coef_%1_ok
+   285                              <1>  MACRO_PRINT_STRING input_error_2
+   286 000000BF B409                <2>  mov AH, 0x9
+   287 000000C1 BA[CE01]            <2>  mov DX, %1
+   288 000000C4 CD21                <2>  int 0x21
+   289 000000C6 EBDA                <1>  jmp EnterFunctionCoefficients_coef_%1
+   290                              <1>  EnterFunctionCoefficients_coef_%1_ok:
+   291 000000C8 A3[0D00]            <1>  mov [coef_%1], AX
+   292 000000CB 891E[0F00]          <1>  mov [coef_%1_sign], BX
+   293                                  	;COEF x^1
+   294                                  	MACRO_ENTER_COEFFICIENT 1
+   295                              <1>  EnterFunctionCoefficients_coef_%1:
+   296                              <1>  MACRO_PRINT_STRING enter_coef_%1
+   297 000000CF B409                <2>  mov AH, 0x9
+   298 000000D1 BA[7402]            <2>  mov DX, %1
+   299 000000D4 CD21                <2>  int 0x21
+   300 000000D6 E8A400              <1>  call ReadUntilLN
+   301                              <1>  MACRO_PARSE_STRING_BUFFER inStrBuf
+   302 000000D9 BE[1E00]            <2>  mov SI, %1
+   303 000000DC E84B00              <2>  call ParseString
+   304 000000DF B409                <2>  mov AH, 0x9
+   305 000000E1 BA[C802]            <2>  mov DX, text_ln_r
+   306 000000E4 CD21                <2>  int 0x21
+   307 000000E6 81F90100            <1>  cmp CX, 0x1
+   308 000000EA 7509                <1>  jne EnterFunctionCoefficients_coef_%1_ok
+   309                              <1>  MACRO_PRINT_STRING input_error_2
+   310 000000EC B409                <2>  mov AH, 0x9
+   311 000000EE BA[CE01]            <2>  mov DX, %1
+   312 000000F1 CD21                <2>  int 0x21
+   313 000000F3 EBDA                <1>  jmp EnterFunctionCoefficients_coef_%1
+   314                              <1>  EnterFunctionCoefficients_coef_%1_ok:
+   315 000000F5 A3[1000]            <1>  mov [coef_%1], AX
+   316 000000F8 891E[1200]          <1>  mov [coef_%1_sign], BX
+   317                                  	;COEF x^0
+   318                                  	MACRO_ENTER_COEFFICIENT 0
+   319                              <1>  EnterFunctionCoefficients_coef_%1:
+   320                              <1>  MACRO_PRINT_STRING enter_coef_%1
+   321 000000FC B409                <2>  mov AH, 0x9
+   322 000000FE BA[9502]            <2>  mov DX, %1
+   323 00000101 CD21                <2>  int 0x21
+   324 00000103 E87700              <1>  call ReadUntilLN
+   325                              <1>  MACRO_PARSE_STRING_BUFFER inStrBuf
+   326 00000106 BE[1E00]            <2>  mov SI, %1
+   327 00000109 E81E00              <2>  call ParseString
+   328 0000010C B409                <2>  mov AH, 0x9
+   329 0000010E BA[C802]            <2>  mov DX, text_ln_r
+   330 00000111 CD21                <2>  int 0x21
+   331 00000113 81F90100            <1>  cmp CX, 0x1
+   332 00000117 7509                <1>  jne EnterFunctionCoefficients_coef_%1_ok
+   333                              <1>  MACRO_PRINT_STRING input_error_2
+   334 00000119 B409                <2>  mov AH, 0x9
+   335 0000011B BA[CE01]            <2>  mov DX, %1
+   336 0000011E CD21                <2>  int 0x21
+   337 00000120 EBDA                <1>  jmp EnterFunctionCoefficients_coef_%1
+   338                              <1>  EnterFunctionCoefficients_coef_%1_ok:
+   339 00000122 A3[1300]            <1>  mov [coef_%1], AX
+   340 00000125 891E[1500]          <1>  mov [coef_%1_sign], BX
+   341 00000129 C3                      	ret
+   342                                  
+   343                                  
+   344                                  
+   345                                  ParseString:	;[SI] as pointer,   returns: AX: result BX: sign  CX:return code
+   346 0000012A 31C0                        xor ax, ax ; clear ax
+   347 0000012C 31DB                        xor bx, bx ; clear bx
+   348 0000012E 31C9                        xor cx, cx ; clear cx
+   349                                  
+   350 00000130 BF0A00                      mov di, 10 ; set the base to 10
+   351                                  
+   352                                  	;TODO checar primer caracter por un signo
+   353                                  
+   354 00000133 8A1C                    	mov bl, [SI] ; load the current character into bl
+   355                                  
+   356 00000135 81FB2B00                	cmp bx, '+'
+   357 00000139 7504                    	jne ParseString_check_minus
+   358 0000013B 46                      	inc si ; move to the next character
+   359 0000013C E90D00                  	jmp ParseString_is_positive
+   360                                  
+   361                                  	ParseString_check_minus:
+   362 0000013F 81FB2D00                	cmp bx, '-'
+   363 00000143 7507                    	jne ParseString_is_positive
+   364 00000145 680100                  	push 0x1	;Flag as negative
+   365 00000148 46                      	inc si 		; move to the next character
+   366                                  
+   367 00000149 E90300                  	jmp parse_loop
+   368                                  
+   369                                  	ParseString_is_positive:
+   370 0000014C 680000                  	push 0x0	;Flag as possitive
+   371                                  
+   372                                  	parse_loop:
+   373 0000014F 8A1C                        mov bl, [SI] ; load the current character into al
+   374 00000151 46                          inc si ; move to the next character
+   375                                  
+   376 00000152 80FB00                      cmp bl, 0x0 		;have we reached the end of the number?
+   377 00000155 7416                        je  parse_done
+   378                                  
+   379 00000157 81FB3000                	cmp bx, '0'			;Is this not a number char? (lower half)
+   380 0000015B 7C15                    	jl parse_error
+   381 0000015D 81FB3900                	cmp bx, '9'			;Is this not a number char? (upper half)
+   382 00000161 7F0F                    	jg parse_error
+   383                                  
+   384 00000163 81EB3000                    sub bx, '0' 		; subtract the ASCII value of '0' to get the actual numeric value
+   385 00000167 F7E7                        mul di		 		; multiply the current result by the base (10)
+   386 00000169 01D8                        add ax, bx 			; add the digit to the result
+   387                                  
+   388 0000016B EBE2                        jmp parse_loop ; continue parsing the next character
+   389                                  
+   390                                  	parse_done:
+   391 0000016D B90000                  	mov CX, 0			;Exit code 0 for success, 1 for input error
+   392 00000170 5B                      	pop BX
+   393                                  ;	cmp BX, 0
+   394                                  ;	je ParseString_not_negative_result
+   395                                  ;	neg AX
+   396                                  ;	ParseString_not_negative_result
+   397 00000171 C3                          ret
+   398                                  
+   399                                      parse_error:
+   400 00000172 B90100                      mov CX, 1
+   401                                  ;    pop BX
+   402 00000175 6681C402000000          	add esp, 2
+   403 0000017C C3                          ret
+   404                                  
+   405                                  
+   406                                  ReadUntilLN:
+   407                                  
+   408 0000017D BF[1E00]                	mov DI, inStrBuf		;Put start of str ptr into inStrBuf_p
+   409 00000180 893E[1C00]              	mov [inStrBuf_p], DI
+   410                                  
+   411                                  	ReadUntilLN_loop:
+   412 00000184 B408                    	mov AH, 0x8		;User input without echo
+   413 00000186 CD21                    	int 0x21		;DOS Function Dispatcher
+   414                                  
+   415 00000188 3C0D                    	cmp AL, 0xD				;Compare to \r
+   416 0000018A 7412                    	je ReadUntilLN_done
+   417                                  
+   418 0000018C 8B3E[1C00]              	mov DI, [inStrBuf_p]		;Put char pointer in DI
+   419 00000190 8805                    	mov [DI], AL				;Set value to the read char
+   420 00000192 FE06[1C00]              	inc byte [inStrBuf_p]		;Increment pointer
+   421                                  
+   422                                  	;Feedback entered char to user
+   423 00000196 B406                    	mov AH, 0x6		;Direct I/O
+   424 00000198 88C2                    	mov DL, AL		;
+   425 0000019A CD21                    	int 0x21
+   426 0000019C EBE6                    	jmp ReadUntilLN_loop
+   427                                  
+   428                                  	ReadUntilLN_done:
+   429 0000019E 8B3E[1C00]              	mov DI, [inStrBuf_p]
+   430 000001A2 C60500                  	mov byte [DI], 0x0
+   431 000001A5 47                      	inc DI
+   432 000001A6 C60524                  	mov byte [DI], 0x24		;$
+   433 000001A9 C3                      	ret
+   434                                  
+   435                                  
+   436                                  UserMainOptionInput:
+   437 000001AA B408                    	mov AH, 0x8		;User input without echo
+   438 000001AC CD21                    	int 0x21		;DOS Function Dispatcher
+   439                                  
+   440                                  	;Compare all posible entrys
+   441 000001AE 3C31                    	cmp al, '1'
+   442 000001B0 7505                    	jne option_2
+   443 000001B2 E866FE                  	call EnterFunctionCoefficients
+   444 000001B5 EBF3                    	jmp UserMainOptionInput
+   445                                  
+   446                                  	option_2:
+   447 000001B7 3C32                    	cmp al, '2'
+   448 000001B9 7505                    	jne option_3
+   449 000001BB E84A00                  	call PrintStoredFunction
+   450 000001BE EBEA                    	jmp UserMainOptionInput
+   451                                  
+   452                                  	option_3:
+   453 000001C0 3C33                    	cmp al, '3'
+   454 000001C2 7505                    	jne option_4
+   455 000001C4 E84200                  	call PrintFunctionDerivative
+   456 000001C7 EBE1                    	jmp UserMainOptionInput
+   457                                  
+   458                                  	option_4:
+   459 000001C9 3C34                    	cmp al, '4'
+   460 000001CB 7505                    	jne option_5
+   461 000001CD E83A00                  	call PrintFunctionIntegral
+   462 000001D0 EBD8                    	jmp UserMainOptionInput
+   463                                  
+   464                                  	option_5:
+   465 000001D2 3C35                    	cmp al, '5'
+   466 000001D4 7505                        jne option_6
+   467 000001D6 E83200                      call GraphFunction
+   468 000001D9 EBCF                    	jmp UserMainOptionInput
+   469                                  
+   470                                      option_6:
+   471 000001DB 3C36                        cmp al, '6'
+   472 000001DD 7505                        jne option_7
+   473 000001DF E82A00                      call SolveByNewton
+   474 000001E2 EBC6                    	jmp UserMainOptionInput
+   475                                  
+   476                                      option_7:
+   477 000001E4 3C37                        cmp al, '7'
+   478 000001E6 7505                        jne option_8
+   479 000001E8 E82200                      call SolveBySteffensen
+   480 000001EB EBBD                    	jmp UserMainOptionInput
+   481                                  
+   482                                      option_8:
+   483 000001ED 3C38                        cmp al, '8'
+   484 000001EF 7505                        jne option_unknown
+   485 000001F1 E81A00                      call ExitApplication
+   486 000001F4 EBB4                    	jmp UserMainOptionInput
+   487                                  
+   488                                      option_unknown:
+   489                                      CLEARSCREEN
+   490                              <1> 
+   491 000001F6 B400                <1> mov AH, 0x0
+   492 000001F8 B012                <1> mov AL, 0x12
+   493 000001FA CD10                <1> int 0x10
+   494 000001FC E87900                  	call PrintMainMenu
+   495                                  	MACRO_PRINT_STRING input_error_1
+   496 000001FF B409                <1>  mov AH, 0x9
+   497 00000201 BA[AB01]            <1>  mov DX, %1
+   498 00000204 CD21                <1>  int 0x21
+   499 00000206 EBA2                    	jmp UserMainOptionInput
+   500                                  
+   501                                  
+   502                                  PrintStoredFunction:
+   503 00000208 C3                      	ret
+   504                                  PrintFunctionDerivative:
+   505 00000209 C3                      	ret
+   506                                  PrintFunctionIntegral:
+   507 0000020A C3                      	ret
+   508                                  GraphFunction:
+   509 0000020B C3                      	ret
+   510                                  SolveByNewton:
+   511 0000020C C3                      	ret
+   512                                  SolveBySteffensen:
+   513 0000020D C3                      	ret
+   514                                  ExitApplication:
+   515 0000020E B44C                    	mov AH, 0x4C
+   516 00000210 B000                    	mov AL, 0x0
+   517 00000212 CD21                    	int 0x21
+   518                                  
+   519                                  
+   520                                  
+   521                                  
+   522                                  
+   523                                  DrawFilledRectangle:	;draw_fill_rect_w, draw_fill_rect_h, screenX, screenY
+   524 00000214 C706[1800]0000          	mov word [draw_fill_rect_w_c], 0		;Init current col counter to 0
+   525                                  
+   526                                  	DrawVerticalLine_ver_loop:
+   527 0000021A 813E[1A00]0000          		cmp word [draw_fill_rect_h], 0		;Have we reached desired height?
+   528 00000220 7E41                    		jle DrawVerticalLine_end
+   529                                  
+   530                                  		DrawVerticalLine_hor_loop:
+   531                                  
+   532 00000222 8B36[1800]              			mov SI, [draw_fill_rect_w_c]
+   533 00000226 8B3E[1600]              			mov DI, [draw_fill_rect_w]
+   534 0000022A 39FE                    			cmp SI, DI						;Have we reached desired column for current line?
+   535 0000022C 7417                    			je DrawVerticalLine_hor_end
+   536                                  
+   537 0000022E 680200                  			push 0x2
+   538                                  ;			mov AL, 0x2						;Color Green
+   539 00000231 E83000                  			call DrawPixel
+   540 00000234 6681C402000000          			add ESP, 2
+   541 0000023B FF06[1800]              			inc word [draw_fill_rect_w_c]	;Move 1 pixel horizontally
+   542 0000023F FF06[0000]              			inc word [screenX]
+   543 00000243 EBDD                    			jmp DrawVerticalLine_hor_loop
+   544                                  
+   545                                  		DrawVerticalLine_hor_end:
+   546 00000245 C706[1800]0000          		mov word [draw_fill_rect_w_c], 0	;Reset current column
+   547 0000024B 8B36[0000]              		mov SI, [screenX]
+   548 0000024F 8B3E[1600]              		mov DI, [draw_fill_rect_w]
+   549 00000253 29FE                    		sub SI, DI							;Where we originally were located
+   550 00000255 8936[0000]              		mov word [screenX], SI				;Put that back
+   551 00000259 FF0E[1A00]              		dec word [draw_fill_rect_h]			;Decreese remaining height to travel
+   552 0000025D FF06[0200]              		inc word [screenY]					;Move one pixel down
+   553 00000261 EBB7                    		jmp DrawVerticalLine_ver_loop
+   554                                  	DrawVerticalLine_end:
+   555 00000263 C3                      	ret
+   556                                  
+   557                                  
+   558                                  DrawPixel:	;screenX, screenY	;Mods AH,AL,BH,CX,DX
+   559 00000264 678B442402              	mov AX, [ESP+2]
+   560 00000269 B40C                    	mov AH, 0x0C		;Write graphics pixel
+   561 0000026B B700                    	mov BH, 0	   		;Page 0
+   562 0000026D 8B0E[0000]              	mov CX, [screenX]	;X coord
+   563 00000271 8B16[0200]              	mov DX, [screenY]	;Y coord
+   564 00000275 CD10                    	int 10h				;Video BIOS
+   565 00000277 C3                      	ret
+   566                                  
+   567                                  
+   568                                  PrintMainMenu:
+   569 00000278 B409                    	mov AH, 0x09 			; Print String
+   570 0000027A BA[0000]                	mov DX, main_title_s	; Start address of message
+   571 0000027D CD21                    	int 0x21				; DOS Function Dispatcher
+   572 0000027F BA[1900]                	mov DX, main_title
+   573 00000282 CD21                    	int 0x21
+   574 00000284 BA[0000]                	mov DX, main_title_s
+   575 00000287 CD21                    	int 0x21
+   576 00000289 BA[C802]                	mov DX, text_ln_r
+   577 0000028C CD21                    	int 0x21
+   578 0000028E BA[C802]                	mov DX, text_ln_r
+   579 00000291 CD21                    	int 0x21
+   580                                  
+   581                                  	;Imprimir todas las opciones
+   582 00000293 BB[B802]                	mov BX, options_array	;Point to first option message
+   583 00000296 66B908000000            	mov ECX, 8	 			;Loop 8 times
+   584                                  
+   585                                  	print_options_loop:
+   586 0000029C 8B17                    	mov DX, [BX]			;Prepare message
+   587 0000029E CD21                    	int 0x21				;Print it
+   588 000002A0 81C30200                	add BX, 2				;Move to next message
+   589 000002A4 E2F6                    	loop print_options_loop
+   590 000002A6 C3                      	ret
+   591                                  
+   592                                  
+   593                                  ;Prints number passed in stack to buffer set at SI
+   594                                  NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, symbol.
+   595 000002A7 31D2                    	xor DX, DX			;Clean DX since div reg does: mov AX, DX:AX / reg
+   596 000002A9 678B442402              	mov AX, [ESP+2]
+   597 000002AE B90000                  	mov CX, 0x0			;for counting chars pushed
+   598                                  
+   599                                  	;TODO special case for 0 as number
+   600                                  
+   601                                  	NumberToString_reverse_loop:
+   602 000002B1 3D0000                  		cmp AX, 0
+   603 000002B4 7411                    		je NumberToString_exit1
+   604 000002B6 BB0A00                  		mov BX, 10			;Prepare divider
+   605 000002B9 F7F3                    		div BX				;DL contains remainder
+   606 000002BB 81C23000                		add DX, '0'			;Make it ascii
+   607 000002BF 52                      		push DX				;Store it for later
+   608 000002C0 31D2                    		xor DX, DX			;Clean DX for net division
+   609 000002C2 83C101                  		add CX, byte 0x1	;++ chars pushed
+   610 000002C5 EBEA                    		jmp NumberToString_reverse_loop
+   611                                  
+   612                                  
+   613                                  
+   614                                  	NumberToString_exit1:
+   615 000002C7 89C8                    		mov AX, CX
+   616 000002C9 BB0200                  		mov BX, 2
+   617 000002CC F7E3                    		mul BX
+   618 000002CE 050400                  		add AX, 4
+   619 000002D1 6631DB                  		xor EBX, EBX
+   620 000002D4 89C3                    		mov BX, AX
+   621 000002D6 6601E3                  		add EBX, ESP
+   622 000002D9 8B07                    		mov AX, [BX]						;Get sign
+   623 000002DB 3D0000                  		cmp AX, 0x0							;
+   624 000002DE 7405                    		je NumberToString_sign_positive
+   625 000002E0 C7042D00                		mov [SI], word '-'
+   626 000002E4 46                      		inc SI
+   627                                  		NumberToString_sign_positive:
+   628                                  
+   629                                  
+   630                                  		NumberToString_normal_loop:
+   631 000002E5 81F90000                		cmp CX, 0
+   632 000002E9 7414                    		je NumberToString_normal_exit
+   633 000002EB 678B0424                		mov AX, [ESP]
+   634 000002EF 8904                    		mov [SI], AX
+   635 000002F1 46                      		inc SI
+   636 000002F2 81E90100                		sub CX, 1
+   637 000002F6 6681C402000000          		add ESP, 2
+   638 000002FD EBE6                    		jmp NumberToString_normal_loop
+   639                                  
+   640                                  	NumberToString_normal_exit:
+   641 000002FF C7040000                		mov [SI], word 0
+   642 00000303 46                      		inc SI
+   643 00000304 C60424                  		mov [SI], byte 0x24, 	;$
+   644 00000307 C3                      		ret
+   645                                  
+   646                                  
+   647                                  
