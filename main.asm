@@ -349,6 +349,7 @@ PrintStoredFunction:
 
 PrintFunctionDerivative:
 	;Same as above haha
+	;Explained in detail in macro MACRO_PRINT_DERIV_COEF
 	MACRO_PRINT_STRING str_deriv_is
 	cmp [coef_5_d], word 0
 	je PrintFunctionDerivative_skip_5
@@ -388,6 +389,7 @@ PrintFunctionDerivative:
 	ret
 PrintFunctionIntegral:
 	;Same as above haha x2
+	;Explained in detail in macro MACRO_PRINT_INT_COEF
 	MACRO_PRINT_STRING str_integral_is
 	cmp [coef_5], word 0
 	je PrintFunctionIntegral_skip_5
@@ -577,9 +579,7 @@ NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, sy
 		ret
 
 
-
-
-;MaxCommonDivisior tested in python (result left in x):
+;MaxCommonDivisor tested in python:
 ;if (x<y):
 ;    x,y = y,x
 
@@ -587,26 +587,27 @@ NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, sy
 ;    n = x % y
 ;    x = y
 ;    y = n
+;return x
 
-MaxCommonDivisor:		;STACK has both numbers
+MaxCommonDivisor:					;STACK has both numbers
 	xor DX, DX
-	mov AX, [ESP+2]		;x  of x/y
-	mov BX, [ESP+4]		;y of x/y
-						;remainder will be stored in DX by default
+	mov AX, [ESP+2]					;x  of x/y
+	mov BX, [ESP+4]					;y of x/y
+	;remainder will be stored in DX by default
 
-	cmp AX, BX
+	cmp AX, BX						;Swap AX if BX is bigger
 	jge MaxCommonDivisor_no_swap
 	xchg AX, BX
 
 	MaxCommonDivisor_no_swap:
 	MaxCommonDivisor_loop:
-		cmp BX, 0
+		cmp BX, 0					;Until no remainder:
 		je MaxCommonDivisor_exit
-		xor DX, DX
+		xor DX, DX					;clean for division
 		div BX
-		mov AX, BX
-		mov BX, DX
-		jmp MaxCommonDivisor_loop
+		mov AX, BX					;x=y
+		mov BX, DX					;y=remainder
+		jmp MaxCommonDivisor_loop	;repeat
 	MaxCommonDivisor_exit:
 	ret
 

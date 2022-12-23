@@ -108,10 +108,10 @@
 	m_print_int_coef_%1_number:
 	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [coef_%1_i_num]
 	MACRO_PRINT_STRING gen_output_buff
-	cmp [coef_%1_i_den], word 1
+	cmp [coef_%1_i_den], word 1			;If denominator is 1, skip '/' + denominator
 	je m_print_int_coef_%1_den_is_1
 
-	MACRO_PRINT_CHAR 0x2f
+	MACRO_PRINT_CHAR 0x2f				; /
 	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [coef_%1_i_den]
 	MACRO_PRINT_STRING gen_output_buff
 
@@ -123,11 +123,11 @@
 
 
 %macro MACRO_UPDATE_DERIVATIVE_COEF 1
-	xor DX, DX
-	mov AX, [coef_%1]
-	mov BX, %1
-	mul BX
-	mov [coef_%1_d], AX
+	xor DX, DX				;Clean up
+	mov AX, [coef_%1]		;x
+	mov BX, %1				;y
+	mul BX					;x = xy
+	mov [coef_%1_d], AX		;Store it
 %endmacro
 
 %macro MACRO_UPDATE_INTEGRAL_COEFFICIENT 1
