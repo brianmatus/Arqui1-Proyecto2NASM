@@ -122,9 +122,9 @@ UpdateDerivativeCoefficients:
 
 
 ParseString:	;[SI] as pointer,   returns: AX: result BX: sign  CX:return code
-    xor ax, ax ; clear ax
-    xor bx, bx ; clear bx
-    xor cx, cx ; clear cx
+    xor ax, ax ;
+    xor bx, bx ;
+    xor cx, cx ;
 
     mov di, 10 ; set the base to 10
 
@@ -206,9 +206,9 @@ ReadUntilLN:
 
 	ReadUntilLN_done:
 	mov DI, [inStrBuf_p]
-	mov byte [DI], 0x0
+	mov byte [DI], 0x0		;null-terminate string
 	inc DI
-	mov byte [DI], 0x24		;$
+	mov byte [DI], 0x24		;add $ for printing
 	ret
 
 
@@ -269,24 +269,24 @@ UserMainOptionInput:
     option_unknown:
     CLEARSCREEN
 	call PrintMainMenu
-	MACRO_PRINT_STRING input_error_1
+	MACRO_PRINT_STRING input_error_1	;"Entered option is not valid"
 	jmp UserMainOptionInput
 
 
 PrintStoredFunction:
 	MACRO_PRINT_STRING str_function_is
-	cmp [coef_5], word 0
+	cmp [coef_5], word 0				;if coefficient is 0, skip
 	je PrintStoredFunction_skip_5
-	cmp [coef_5_sign], byte 0
+	cmp [coef_5_sign], byte 0			;Sign is positive? no need for + in first term
 	je PrintStoredFunction_5_pos
-	MACRO_PRINT_CHAR 0x2d		; -
+	MACRO_PRINT_CHAR 0x2d				; -
 	PrintStoredFunction_5_pos:
 	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [coef_5]
-	MACRO_PRINT_STRING gen_output_buff
-	MACRO_PRINT_STRING str_x_5
+	MACRO_PRINT_STRING gen_output_buff	;Print the parsed number
+	MACRO_PRINT_STRING str_x_5			;x^5
 
+	;Repeat above for every coefficient
 	PrintStoredFunction_skip_5:
-
 	cmp [coef_4], word 0
 	je PrintStoredFunction_skip_4
 	MACRO_PRINT_FUNC_COEF 4
@@ -313,13 +313,13 @@ PrintStoredFunction:
 
 	PrintStoredFunction_skip_0:
 
-	MACRO_PRINT_CHAR 13
-	MACRO_PRINT_CHAR 10
+	MACRO_PRINT_STRING text_ln_r
 	MACRO_PRINT_STRING str_press_any
 	MACRO_INPUT_CHAR_NO_ECO
 	ret
 
 PrintFunctionDerivative:
+	;Same as above haha
 	MACRO_PRINT_STRING str_deriv_is
 	cmp [coef_5_d], word 0
 	je PrintFunctionDerivative_skip_5
@@ -369,9 +369,6 @@ ExitApplication:
 	mov AH, 0x4C
 	mov AL, 0x0
 	int 0x21
-
-
-
 
 
 DrawFilledRectangle:	;draw_fill_rect_w, draw_fill_rect_h, screenX, screenY
