@@ -17,6 +17,8 @@ main_option7:		db 0x9, "7)Encontrar ceros mediante metodo de Steffensen", 0xA,0d
 main_option8:		db 0x9, "8)Salir", 0xA,0dh,"$"
 input_error_1:		db "La opcion ingresada no es valida", 0xA,0dh,"$"
 input_error_2:		db "El texto ingresado no es valido", 0xA,0dh,"$"
+str_function_is:	db "La funcion almacenada es:",0xA,0dh,"$"
+str_deriv_is:		db "La derivada de la funcion es:",0xA,0dh,"$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 enter_coef_5:		db "Ingrese el coeficiente para x^5:","$"
 enter_coef_4:		db "Ingrese el coeficiente para x^4:","$"
@@ -25,12 +27,12 @@ enter_coef_2:		db "Ingrese el coeficiente para x^2:","$"
 enter_coef_1:		db "Ingrese el coeficiente para x^1:","$"
 enter_coef_0:		db "Ingrese el coeficiente para x^0:","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-str_x_5:			db "x^5  ","$"
-str_x_4:			db "x^4  ","$"
-str_x_3:			db "x^3  ","$"
-str_x_2:			db "x^2  ","$"
-str_x_1:			db "x^1  ","$"
-str_x_0:			db "  ","$"
+str_x_5:			db "x^5 ","$"
+str_x_4:			db "x^4 ","$"
+str_x_3:			db "x^3 ","$"
+str_x_2:			db "x^2 ","$"
+str_x_1:			db "x^1 ","$"
+str_x_0:			db " ","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 deleteme_test: 		db "1",0, "$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,16 +45,22 @@ screenY:			dw 0x0
 
 coef_5: 			dw 5  ; x^5
 coef_5_sign: 		db 0
-coef_4: 			dw 0  ; x^4
+coef_4: 			dw 4  ; x^4
 coef_4_sign: 		db 0
-coef_3: 			dw 0 ; x^3
+coef_3: 			dw 3  ; x^3
 coef_3_sign: 		db 0
-coef_2: 			dw 0  ; x^2
-coef_2_sign: 		db 0
-coef_1: 			dw 0  ; x
-coef_1_sign: 		db 0
-coef_0: 			dw 0  ; constant
+coef_2: 			dw 2  ; x^2
+coef_2_sign: 		db 1
+coef_1: 			dw 1  ; x
+coef_1_sign: 		db 1
+coef_0: 			dw 10 ; constant
 coef_0_sign: 		db 0
+
+coef_5_d: 			dw 25  ; d/dx x^5
+coef_4_d: 			dw 16  ; d/dx x^4
+coef_3_d: 			dw 9  ; d/dx x^3
+coef_2_d: 			dw 4  ; d/dx x^2
+coef_1_d: 			dw 1  ; d/dx x
 
 draw_fill_rect_w:	dw 0x0
 draw_fill_rect_w_c:	dw 0x0
@@ -72,7 +80,9 @@ global _start
 	 org 0x100	  	;It's a .COM program (Start program at offset 100h)
 
 _start:
+	call UpdateDerivativeCoefficients	;TODO deleteme
 	call UserMainOptionInput
+	mov AX, coef_5_d					;TODO deleteme
 
 ;	mov word [screenX], 0x140
 ;	mov word [screenY], 0x0F0
@@ -97,8 +107,18 @@ EnterFunctionCoefficients:
 	MACRO_ENTER_COEFFICIENT 1
 	;COEF x^0
 	MACRO_ENTER_COEFFICIENT 0
+
+	call UpdateDerivativeCoefficients
 	ret
 
+
+UpdateDerivativeCoefficients:
+	MACRO_UPDATE_DERIVATIVE_COEF 5
+	MACRO_UPDATE_DERIVATIVE_COEF 4
+	MACRO_UPDATE_DERIVATIVE_COEF 3
+	MACRO_UPDATE_DERIVATIVE_COEF 2
+	MACRO_UPDATE_DERIVATIVE_COEF 1
+	ret
 
 
 ParseString:	;[SI] as pointer,   returns: AX: result BX: sign  CX:return code
@@ -254,14 +274,14 @@ UserMainOptionInput:
 
 
 PrintStoredFunction:
-
+	MACRO_PRINT_STRING str_function_is
 	cmp [coef_5], word 0
 	je PrintStoredFunction_skip_5
 	cmp [coef_5_sign], byte 0
 	je PrintStoredFunction_5_pos
 	MACRO_PRINT_CHAR 0x2d		; -
 	PrintStoredFunction_5_pos:
-	MACRO_PARSE_COEFFICIENT_WITHOUT_SIGN_TO_STRING 5
+	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [coef_5]
 	MACRO_PRINT_STRING gen_output_buff
 	MACRO_PRINT_STRING str_x_5
 
@@ -293,7 +313,6 @@ PrintStoredFunction:
 
 	PrintStoredFunction_skip_0:
 
-
 	MACRO_PRINT_CHAR 13
 	MACRO_PRINT_CHAR 10
 	MACRO_PRINT_STRING str_press_any
@@ -301,6 +320,42 @@ PrintStoredFunction:
 	ret
 
 PrintFunctionDerivative:
+	MACRO_PRINT_STRING str_deriv_is
+	cmp [coef_5_d], word 0
+	je PrintFunctionDerivative_skip_5
+	cmp [coef_5_sign], byte 0
+	je PrintFunctionDerivative_5_pos
+	MACRO_PRINT_CHAR 0x2d		; -
+	PrintFunctionDerivative_5_pos:
+	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [coef_5_d]
+	MACRO_PRINT_STRING gen_output_buff
+	MACRO_PRINT_STRING str_x_4
+
+	PrintFunctionDerivative_skip_5:
+
+	cmp [coef_4_d], word 0
+	je PrintFunctionDerivative_skip_4
+	MACRO_PRINT_DERIV_COEF 4, 3
+
+	PrintFunctionDerivative_skip_4:
+	cmp [coef_3_d], word 0
+	je PrintStoredFunction_skip_3
+	MACRO_PRINT_DERIV_COEF 3, 2
+
+	PrintFunctionDerivative_skip_3:
+	cmp [coef_2_d], word 0
+	je PrintFunctionDerivative_skip_2
+	MACRO_PRINT_DERIV_COEF 2, 1
+
+	PrintFunctionDerivative_skip_2:
+	cmp [coef_1_d], word 0
+	je PrintFunctionDerivative_skip_1
+	MACRO_PRINT_DERIV_COEF 1, 0
+
+	PrintFunctionDerivative_skip_1:
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
 	ret
 PrintFunctionIntegral:
 	ret
@@ -419,7 +474,7 @@ NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, sy
 		add DX, '0'					;Make it ascii
 		push DX						;Store it for later
 		xor DX, DX					;Clean DX for net division
-		add CX, byte 0x1			;++ chars pushed
+		add CX, byte 0x1			;charsInStack++
 		jmp NumberToString_reverse_loop
 
 
@@ -430,13 +485,13 @@ NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, sy
 		mov AX, [ESP]				;Get it
 		mov [SI], AX				;Add it to buffer
 		inc SI
-		sub CX, 1					;--charsInStack
+		sub CX, 1					;charsInStack--
 		add ESP, 2					;Clean stack
 		jmp NumberToString_normal_loop
 
 	NumberToString_normal_exit:
-		mov [SI], word 0			;null-terminate buffer
-		inc SI
+;		mov [SI], word 0			;null-terminate buffer
+;		inc SI
 		mov [SI], byte 0x24 		;$ for printing int21hs compliance
 		ret
 
