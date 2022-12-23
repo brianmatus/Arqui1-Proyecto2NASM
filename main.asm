@@ -1,3 +1,5 @@
+;Al inicio de este proyecto, dios y yo sabíamos que estaba haciendo.
+;Ahora, sólo dios sabe xD
 %include "code/macros.asm"
 
 SECTION .rodata
@@ -17,8 +19,9 @@ main_option7:		db 0x9, "7)Encontrar ceros mediante metodo de Steffensen", 0xA,0d
 main_option8:		db 0x9, "8)Salir", 0xA,0dh,"$"
 input_error_1:		db "La opcion ingresada no es valida", 0xA,0dh,"$"
 input_error_2:		db "El texto ingresado no es valido", 0xA,0dh,"$"
-str_function_is:	db "La funcion almacenada es:",0xA,0dh,"$"
-str_deriv_is:		db "La derivada de la funcion es:",0xA,0dh,"$"
+str_function_is:	db "La funcion almacenada es:","$"
+str_deriv_is:		db "La derivada de la funcion es:","$"
+str_integral_is:	db "La integral de la funcion es:","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 enter_coef_5:		db "Ingrese el coeficiente para x^5:","$"
 enter_coef_4:		db "Ingrese el coeficiente para x^4:","$"
@@ -27,12 +30,14 @@ enter_coef_2:		db "Ingrese el coeficiente para x^2:","$"
 enter_coef_1:		db "Ingrese el coeficiente para x^1:","$"
 enter_coef_0:		db "Ingrese el coeficiente para x^0:","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+str_x_6:			db "x^6 ","$"
 str_x_5:			db "x^5 ","$"
 str_x_4:			db "x^4 ","$"
 str_x_3:			db "x^3 ","$"
 str_x_2:			db "x^2 ","$"
-str_x_1:			db "x^1 ","$"
+str_x_1:			db "x ","$"
 str_x_0:			db " ","$"
+str_int_const:		db "+C","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 deleteme_test: 		db "1",0, "$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,7 +48,7 @@ SECTION .data
 screenX:			dw 0x0
 screenY:			dw 0x0
 
-coef_5: 			dw 5  ; x^5
+coef_5: 			dw 10  ; x^5
 coef_5_sign: 		db 0
 coef_4: 			dw 4  ; x^4
 coef_4_sign: 		db 0
@@ -56,11 +61,25 @@ coef_1_sign: 		db 1
 coef_0: 			dw 10 ; constant
 coef_0_sign: 		db 0
 
-coef_5_d: 			dw 25  ; d/dx x^5
-coef_4_d: 			dw 16  ; d/dx x^4
-coef_3_d: 			dw 9  ; d/dx x^3
-coef_2_d: 			dw 4  ; d/dx x^2
-coef_1_d: 			dw 1  ; d/dx x
+coef_5_d: 			dw 0  ; d/dx x^5
+coef_4_d: 			dw 0  ; d/dx x^4
+coef_3_d: 			dw 0  ; d/dx x^3
+coef_2_d: 			dw 0  ; d/dx x^2
+coef_1_d: 			dw 0  ; d/dx x
+
+coef_5_i_num: 		dw 0  ; x^5
+coef_5_i_den: 		dw 0  ; x^5
+coef_4_i_num: 		dw 0  ; x^4
+coef_4_i_den: 		dw 0  ; x^4
+coef_3_i_num: 		dw 0  ; x^3
+coef_3_i_den: 		dw 0  ; x^3
+coef_2_i_num: 		dw 0  ; x^2
+coef_2_i_den: 		dw 0  ; x^2
+coef_1_i_num: 		dw 0  ; x
+coef_1_i_den: 		dw 0  ; x
+coef_0_i_num: 		dw 0 ; constant
+coef_0_i_den: 		dw 0 ; constant
+
 
 draw_fill_rect_w:	dw 0x0
 draw_fill_rect_w_c:	dw 0x0
@@ -80,21 +99,22 @@ global _start
 	 org 0x100	  	;It's a .COM program (Start program at offset 100h)
 
 _start:
-	call UpdateDerivativeCoefficients	;TODO deleteme
-	call UserMainOptionInput
-	mov AX, coef_5_d					;TODO deleteme
 
-;	mov word [screenX], 0x140
-;	mov word [screenY], 0x0F0
-;	mov word [draw_fill_rect_w], 0x1E
-;	mov word [draw_fill_rect_h], 0xA
-;	call DrawFilledRectangle
+
+	;DEBUG
+	mov AX, [coef_5_i_num]
+
+	;END DEBUG
+
+
+	call UserMainOptionInput
 	call ExitApplication
 
 
 
-EnterFunctionCoefficients:
 
+
+EnterFunctionCoefficients:
 	;COEF x^5
 	MACRO_ENTER_COEFFICIENT 5
 	;COEF x^4
@@ -107,8 +127,8 @@ EnterFunctionCoefficients:
 	MACRO_ENTER_COEFFICIENT 1
 	;COEF x^0
 	MACRO_ENTER_COEFFICIENT 0
-
 	call UpdateDerivativeCoefficients
+	call UpdateIntegralCoefficients
 	ret
 
 
@@ -120,11 +140,20 @@ UpdateDerivativeCoefficients:
 	MACRO_UPDATE_DERIVATIVE_COEF 1
 	ret
 
+UpdateIntegralCoefficients:
+	MACRO_UPDATE_INTEGRAL_COEFFICIENT 5
+	MACRO_UPDATE_INTEGRAL_COEFFICIENT 4
+	MACRO_UPDATE_INTEGRAL_COEFFICIENT 3
+	MACRO_UPDATE_INTEGRAL_COEFFICIENT 2
+	MACRO_UPDATE_INTEGRAL_COEFFICIENT 1
+	MACRO_UPDATE_INTEGRAL_COEFFICIENT 0
+	ret
+
 
 ParseString:	;[SI] as pointer,   returns: AX: result BX: sign  CX:return code
-    xor ax, ax ;
-    xor bx, bx ;
-    xor cx, cx ;
+    xor ax, ax 	; Clean needed registers
+    xor bx, bx 	;
+    xor cx, cx 	;
 
     mov di, 10 ; set the base to 10
 
@@ -358,6 +387,61 @@ PrintFunctionDerivative:
 	MACRO_INPUT_CHAR_NO_ECO
 	ret
 PrintFunctionIntegral:
+	;Same as above haha x2
+	MACRO_PRINT_STRING str_integral_is
+	cmp [coef_5], word 0
+	je PrintFunctionIntegral_skip_5
+	cmp [coef_5_sign], byte 0
+	je PrintFunctionIntegral_5_pos
+	MACRO_PRINT_CHAR 0x2d		; -
+	PrintFunctionIntegral_5_pos:
+	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [coef_5_i_num]
+	MACRO_PRINT_STRING gen_output_buff
+
+	cmp [coef_5_i_den], word 1
+	je PrintFunctionIntegral_den_is_1
+
+	MACRO_PRINT_CHAR 0x2f
+	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [coef_5_i_den]
+	MACRO_PRINT_STRING gen_output_buff
+
+	PrintFunctionIntegral_den_is_1:
+	MACRO_PRINT_STRING str_x_6
+
+
+
+	PrintFunctionIntegral_skip_5:
+
+	cmp [coef_4], word 0
+	je PrintFunctionIntegral_skip_4
+	MACRO_PRINT_INT_COEF 4, 5
+
+	PrintFunctionIntegral_skip_4:
+	cmp [coef_3], word 0
+	je PrintStoredFunction_skip_3
+	MACRO_PRINT_INT_COEF 3, 4
+
+	PrintFunctionIntegral_skip_3:
+	cmp [coef_2], word 0
+	je PrintFunctionIntegral_skip_2
+	MACRO_PRINT_INT_COEF 2, 3
+
+	PrintFunctionIntegral_skip_2:
+	cmp [coef_1], word 0
+	je PrintFunctionIntegral_skip_1
+	MACRO_PRINT_INT_COEF 1, 2
+
+	PrintFunctionIntegral_skip_1:
+	cmp [coef_0], word 0
+	je PrintFunctionIntegral_skip_0
+	MACRO_PRINT_INT_COEF 0, 1
+
+	PrintFunctionIntegral_skip_0:
+
+	MACRO_PRINT_STRING str_int_const
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
 	ret
 GraphFunction:
 	ret
@@ -494,3 +578,42 @@ NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, sy
 
 
 
+
+;MaxCommonDivisior tested in python (result left in x):
+;if (x<y):
+;    x,y = y,x
+
+;while (y > 0):
+;    n = x % y
+;    x = y
+;    y = n
+
+MaxCommonDivisor:		;STACK has both numbers
+	xor DX, DX
+	mov AX, [ESP+2]		;x  of x/y
+	mov BX, [ESP+4]		;y of x/y
+						;remainder will be stored in DX by default
+
+	cmp AX, BX
+	jge MaxCommonDivisor_no_swap
+	xchg AX, BX
+
+	MaxCommonDivisor_no_swap:
+	MaxCommonDivisor_loop:
+		cmp BX, 0
+		je MaxCommonDivisor_exit
+		xor DX, DX
+		div BX
+		mov AX, BX
+		mov BX, DX
+		jmp MaxCommonDivisor_loop
+	MaxCommonDivisor_exit:
+	ret
+
+
+
+;	mov word [screenX], 0x140
+;	mov word [screenY], 0x0F0
+;	mov word [draw_fill_rect_w], 0x1E
+;	mov word [draw_fill_rect_h], 0xA
+;	call DrawFilledRectangle

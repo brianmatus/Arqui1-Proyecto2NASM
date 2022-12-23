@@ -96,6 +96,28 @@
 	MACRO_PRINT_STRING str_x_%2
 %endmacro
 
+%macro MACRO_PRINT_INT_COEF 2
+	cmp [coef_%1_sign], byte 0			;Compare Sign
+	je m_print_int_coef_%1_pos
+	MACRO_PRINT_CHAR 0x2d				;If neg, print -
+	jmp m_print_int_coef_%1_number
+
+	m_print_int_coef_%1_pos:
+	MACRO_PRINT_CHAR 0x2b				;If pos, print +
+
+	m_print_int_coef_%1_number:
+	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [coef_%1_i_num]
+	MACRO_PRINT_STRING gen_output_buff
+	cmp [coef_%1_i_den], word 1
+	je m_print_int_coef_%1_den_is_1
+
+	MACRO_PRINT_CHAR 0x2f
+	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [coef_%1_i_den]
+	MACRO_PRINT_STRING gen_output_buff
+
+	m_print_int_coef_%1_den_is_1:
+	MACRO_PRINT_STRING str_x_%2
+%endmacro
 
 
 
@@ -106,4 +128,26 @@
 	mov BX, %1
 	mul BX
 	mov [coef_%1_d], AX
+%endmacro
+
+%macro MACRO_UPDATE_INTEGRAL_COEFFICIENT 1
+
+	push word [coef_%1]		;Numerator
+	push %1+1				;Divisor
+	call MaxCommonDivisor
+	add ESP, 4				;Clean stack
+
+	;Now that MCD is calculated, divide both numbers by it
+	mov BX, AX				;Denominator
+	xor DX, DX				;Clean upper part of numerator
+	mov AX, [coef_%1]		;Numerator
+	div BX
+	mov [coef_%1_i_num], AX	;Save integral numerator
+
+	;BX already has max common divisor as denominator
+	xor DX, DX				;Clean upper part of numerator
+	mov AX, %1+1			;Numerator
+	div BX
+	mov [coef_%1_i_den], AX	;Save integral denominator
+
 %endmacro
