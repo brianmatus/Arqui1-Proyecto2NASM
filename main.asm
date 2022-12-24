@@ -100,18 +100,12 @@ global _start
 
 _start:
 
-
 	;DEBUG
-	mov AX, [coef_5_i_num]
-
+;	mov AX, [coef_5_i_num]
 	;END DEBUG
-
 
 	call UserMainOptionInput
 	call ExitApplication
-
-
-
 
 
 EnterFunctionCoefficients:
@@ -306,7 +300,7 @@ PrintStoredFunction:
 	MACRO_PRINT_STRING str_function_is
 	cmp [coef_5], word 0				;if coefficient is 0, skip
 	je PrintStoredFunction_skip_5
-	cmp [coef_5_sign], byte 0			;Sign is positive? no need for + in first term
+	cmp [coef_5_sign], byte 0			;Sign is positive? no need to print + in first term
 	je PrintStoredFunction_5_pos
 	MACRO_PRINT_CHAR 0x2d				; -
 	PrintStoredFunction_5_pos:
