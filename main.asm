@@ -17,8 +17,9 @@ main_option5:		db 0x9, "5)Graficar funcion original, derivada o integral", 0xA,0
 main_option6:		db 0x9, "6)Encontrar ceros mediante metodo de Newton", 0xA,0dh,"$"
 main_option7:		db 0x9, "7)Encontrar ceros mediante metodo de Steffensen", 0xA,0dh,"$"
 main_option8:		db 0x9, "8)Salir", 0xA,0dh,"$"
-input_error_1:		db "La opcion ingresada no es valida", 0xA,0dh,"$"
-input_error_2:		db "El texto ingresado no es valido", 0xA,0dh,"$"
+input_error_1:		db "La opcion ingresada no es valida",0xA,0dh,"$"
+input_error_2:		db "El texto ingresado no es valido",0xA,0dh,"$"
+str_no_function:	db "No se ha almacenado ninguna funcion",0xA,0dh,"$"
 str_function_is:	db "La funcion almacenada es:","$"
 str_deriv_is:		db "La derivada de la funcion es:","$"
 str_integral_is:	db "La integral de la funcion es:","$"
@@ -48,6 +49,7 @@ SECTION .data
 screenX:			dw 0x0
 screenY:			dw 0x0
 
+function_exists:	db 0
 coef_5: 			dw 10  ; x^5
 coef_5_sign: 		db 0
 coef_4: 			dw 4  ; x^4
@@ -123,6 +125,7 @@ EnterFunctionCoefficients:
 	MACRO_ENTER_COEFFICIENT 0
 	call UpdateDerivativeCoefficients
 	call UpdateIntegralCoefficients
+	mov [function_exists], byte 0x1
 	ret
 
 
@@ -293,10 +296,20 @@ UserMainOptionInput:
     CLEARSCREEN
 	call PrintMainMenu
 	MACRO_PRINT_STRING input_error_1	;"Entered option is not valid"
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
 	jmp UserMainOptionInput
 
 
 PrintStoredFunction:
+	cmp [function_exists], byte 0x0		;Check if function has been entered before printing something
+	jne PrintStoredFunction_function_exists
+	MACRO_PRINT_STRING str_no_function
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
+
+	PrintStoredFunction_function_exists:
 	MACRO_PRINT_STRING str_function_is
 	cmp [coef_5], word 0				;if coefficient is 0, skip
 	je PrintStoredFunction_skip_5
@@ -343,6 +356,14 @@ PrintStoredFunction:
 
 PrintFunctionDerivative:
 	;Same as above haha
+	cmp [function_exists], byte 0x0		;Check if function has been entered before printing something
+	jne PrintFunctionDerivative_function_exists
+	MACRO_PRINT_STRING str_no_function
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
+
+	PrintFunctionDerivative_function_exists:
 	;Explained in detail in macro MACRO_PRINT_DERIV_COEF
 	MACRO_PRINT_STRING str_deriv_is
 	cmp [coef_5_d], word 0
@@ -383,6 +404,14 @@ PrintFunctionDerivative:
 	ret
 PrintFunctionIntegral:
 	;Same as above haha x2
+	cmp [function_exists], byte 0x0		;Check if function has been entered before printing something
+	jne PrintFunctionIntegral_function_exists
+	MACRO_PRINT_STRING str_no_function
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
+
+	PrintFunctionIntegral_function_exists:
 	;Explained in detail in macro MACRO_PRINT_INT_COEF
 	MACRO_PRINT_STRING str_integral_is
 	cmp [coef_5], word 0
