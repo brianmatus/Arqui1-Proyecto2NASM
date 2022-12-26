@@ -262,3 +262,80 @@
 	fstp qword [graph_result_y_i]				;Store it								F-Stack:0
 	CalculateIntegralY_skip_%1:
 %endmacro
+
+
+;ONE TIME USE
+%macro MACRO_ASK_X0 0
+	GraphFunction_enter_xo:
+		MACRO_PRINT_STRING str_enter_xo				;Promt to enter xo
+		call ReadUntilLN							;Read input
+		MACRO_PRINT_STRING text_ln_r
+		MACRO_PARSE_STRING_BUFFER inStrBuf			;Parse the number
+
+		cmp CX, word 0x1							;If no error
+		jne GraphFunction_xo_correct				;then continue
+		MACRO_PRINT_STRING input_error_2			;print user error
+		jmp GraphFunction_enter_xo					;retry
+
+	GraphFunction_xo_correct:
+	cmp BX, word 0x0								;if negative
+	je GraphFunction_xo_positive
+	neg AX											;invert sign
+	GraphFunction_xo_positive:
+	mov [graph_xo], AX								;store it
+
+%endmacro
+
+
+;ONE TIME USE
+%macro MACRO_ASK_XF 0
+	GraphFunction_enter_xf:
+		MACRO_PRINT_STRING str_enter_xf			;Promt to enter xf
+		call ReadUntilLN						;Read input
+		MACRO_PRINT_STRING text_ln_r
+		MACRO_PARSE_STRING_BUFFER inStrBuf		;Parse the number
+
+		cmp CX, word 0x1						;If no error
+		jne GraphFunction_xf_correct			;then continue
+		MACRO_PRINT_STRING input_error_2		;print user error
+		jmp GraphFunction_enter_xo				;retry to xo in case of mind change
+
+	GraphFunction_xf_correct:
+	cmp BX, word 0x0							;if negative
+	je GraphFunction_xf_positive
+	neg AX										;invert sign
+	GraphFunction_xf_positive:
+	mov [graph_xf], AX							;store it
+	cmp AX, [graph_xo]							;If Xf-Xo
+	jg GraphFunction_interval_correct			;continue
+	MACRO_PRINT_STRING input_error_3			;else, tell user
+	jmp GraphFunction_enter_xo					;and try again
+
+	GraphFunction_interval_correct:
+
+%endmacro
+
+
+;ONE TIME USE
+%macro MACRO_ASK_Y_RANGE 0
+	GraphFunction_enter_y_range:
+		MACRO_PRINT_STRING str_enter_y_range	;Promt to enter Y range
+		call ReadUntilLN						;Read input
+		MACRO_PRINT_STRING text_ln_r
+		MACRO_PARSE_STRING_BUFFER inStrBuf		;Parse the number
+
+		cmp CX, word 0x1						;If no error
+		jne GraphFunction_y_range_correct		;then continue
+		MACRO_PRINT_STRING input_error_2		;print user error
+		jmp GraphFunction_enter_y_range			;retry
+
+		GraphFunction_y_range_correct:
+		cmp BX, word 0x0						;Y interval is not entered with -
+		je GraphFunction_y_range_positive
+		MACRO_PRINT_STRING input_error_3		;print user error
+		jmp GraphFunction_enter_y_range
+
+	GraphFunction_y_range_positive:
+	mov [graph_y_size], AX
+%endmacro
+

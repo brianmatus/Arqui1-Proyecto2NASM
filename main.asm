@@ -19,6 +19,7 @@ main_option7:		db 0x9, "7)Encontrar ceros mediante metodo de Steffensen", 0xA,0d
 main_option8:		db 0x9, "8)Salir", 0xA,0dh,"$"
 input_error_1:		db "La opcion ingresada no es valida",0xA,0dh,"$"
 input_error_2:		db "El texto ingresado no es valido",0xA,0dh,"$"
+input_error_3:		db "El intervalo ingresado no es valido",0xA,0dh,"$"
 str_no_function:	db "No se ha almacenado ninguna funcion",0xA,0dh,"$"
 str_function_is:	db "La funcion almacenada es:","$"
 str_deriv_is:		db "La derivada de la funcion es:","$"
@@ -30,6 +31,14 @@ enter_coef_3:		db "Ingrese el coeficiente para x^3:","$"
 enter_coef_2:		db "Ingrese el coeficiente para x^2:","$"
 enter_coef_1:		db "Ingrese el coeficiente para x^1:","$"
 enter_coef_0:		db "Ingrese el coeficiente para x^0:","$"
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+str_enter_xo:		db "Ingrese el rango menor de X:","$"
+str_enter_xf:		db "Ingrese el rango mayor de X:","$"
+str_enter_y_range:	db "Ingrese la amplitud Y (+-valor):","$"
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+str_ask_graph_fun:	db "Graficar funcion original? (Y/n)","$"
+str_ask_graph_der:	db "Graficar funcion derivada? (Y/n)","$"
+str_ask_graph_int:	db "Graficar funcion integral? (Y/n)","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 str_x_6:			db "x^6 ","$"
 str_x_5:			db "x^5 ","$"
@@ -52,14 +61,14 @@ screenX:			dw 0x0
 screenY:			dw 0x0
 screenY_float:		dd 0x0
 
-function_exists:	db 0
+function_exists:	db 1  ;TODO change to 0, for debug use already existing function
 
 coef_5: 			dw 5  ; x^5
 coef_5_sign: 		db 0
 coef_4: 			dw 4  ; x^4
 coef_4_sign: 		db 0
-coef_3: 			dw 3  ; x^3
-coef_3_sign: 		db 0
+coef_3: 			dw 9  ; x^3
+coef_3_sign: 		db 1
 coef_2: 			dw 2  ; x^2
 coef_2_sign: 		db 1
 coef_1: 			dw 1  ; x
@@ -89,21 +98,28 @@ coef_0_i_den: 		dw 0 ; constant
 coef_c:				dw 1 ; +C
 coef_c_sign:		dw 1 ; +C
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-graph_result_y:		dq 2.00000
+graph_result_y:		dq 7.5
 graph_result_y_d:	dq 0.0
 graph_result_y_i:	dq 0.0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 graph_current_x:	dq 0
-graph_xo:			dd -2
-graph_xf:			dd 2
+graph_xo:			dw -1
+graph_xf:			dw 9
 graph_x_step:		dq 0.0
-graph_y_size:		dw 10	;+- 10
+graph_y_size:		dw 15	; +-range
 graph_num_2:		dd 2
-t_graph_result_y:   dq 7.5
+graph_random_int: 	dw 0
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+graph_active_fun:	db 1
+graph_active_der:	db 1
+graph_active_int:	db 1
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 draw_fill_rect_w:	dw 0x0
 draw_fill_rect_w_c:	dw 0x0
 draw_fill_rect_h:	dw 0x0
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+debug_var_float:	dq 42.0
+debug_var_word:		dq 42.0
 
 inStrBuf_p:				dw 0x0
 inStrBuf:  				times 30 db 0x0
@@ -124,103 +140,259 @@ _start:
 
 	;DEBUG
 
+;	call GraphGuideLines
+;	MACRO_INPUT_CHAR_NO_ECO
+;	mov AX, word [debug_var_word]
+;	fld qword [debug_var_float]
+
+
 	call UpdateDerivativeCoefficients
 	call UpdateIntegralCoefficients
-
-
-	mov [screenX], word 220
-	mov [screenY], word 2
-
-
-	call DrawFunctionPoint
-	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [screenY]
-	MACRO_PRINT_STRING gen_output_buff
-	MACRO_INPUT_CHAR_NO_ECO
-
-
-;	call GraphFunction
-;	MACRO_INPUT_CHAR_NO_ECO
-
 	;END DEBUG
 
 	call UserMainOptionInput
 	call ExitApplication
 
 
+GraphFunction:
+	CLEARSCREEN
+	;Enter Xo
+	MACRO_ASK_X0
+	;Enter Xf
+	MACRO_ASK_XF
+	;Enter Y range
+	MACRO_ASK_Y_RANGE
+
+	mov [graph_active_fun], byte 0x1		;Graph all of them until told otherwise
+	mov [graph_active_der], byte 0x1
+	mov [graph_active_int], byte 0x1
+
+	;Graph normal function?
+	MACRO_PRINT_STRING str_ask_graph_fun
+	mov AH, 0x1								;Keyboard Input with Echo
+	int 0x21								;DOS Function Dispatcher
+	cmp AL, 110								;user entered "n"?
+	jne GraphFunction_normal_ok
+	mov [graph_active_fun], byte 0x0
+
+	GraphFunction_normal_ok:
+	MACRO_PRINT_STRING text_ln_r
+
+	;Graph derivative function?
+	MACRO_PRINT_STRING str_ask_graph_der
+	mov AH, 0x1								;Keyboard Input with Echo
+	int 0x21								;DOS Function Dispatcher
+	cmp AL, 110								;user entered "n"?
+	jne GraphFunction_der_ok
+	mov [graph_active_der], byte 0x0
+
+	GraphFunction_der_ok:
+	MACRO_PRINT_STRING text_ln_r
+
+	;Graph integral function?
+	MACRO_PRINT_STRING str_ask_graph_int
+	mov AH, 0x1							;Keyboard Input with Echo
+	int 0x21							;DOS Function Dispatcher
+	cmp AL, 110							;user entered "n"?
+	jne GraphFunction_int_ok
+	mov [graph_active_int], byte 0x0
+
+	GraphFunction_int_ok:
+
+	CLEARSCREEN
+	call GraphGuideLines
+	call GraphNormalFunction
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
 
 
 
-DrawFunctionPoint:			;Need already set: t_graph_result_y, screenX
-	fld qword [t_graph_result_y]			;									F-Stack:1
+GraphGuideLines:
+	;Horizontal one is easy
+	mov [screenY], word 239				;Prepare line to center (a little off because of width)
+	mov [screenX], word 0x0				;Set to origin
+
+	mov word [draw_fill_rect_w], 640	;Screen width
+	mov word [draw_fill_rect_h], 2
+	push 0x7							;Gray
+	call DrawFilledRectangle
+	add ESP, 2
+
+	;Vertical one is the real pain :(
+	;Is x=0 even on screen?
+	fldz							;										F-stack:1
+	fild word [graph_xo]			;										F-stack:2
+	fcomp							;cmp graph_xo, 0						F-stack:1
+	fnstsw ax						;flags to ax
+	sahf							;ax to cpu flags
+	ja GraphGuideLines_done
+
+	fild word [graph_xf]			;										F-stack:2
+	fcompp							;cmp graph_xf, 0						F-stack:0
+	fnstsw ax						;flags to ax
+	sahf							;ax to cpu flags
+	jb GraphGuideLines_done
+
+	;x_pos = -Xo*screen_size_x/(Xf-Xo)
+	fild word [graph_xf]			;Xf										F-Stack:1
+	fisub word [graph_xo]			;Xf-Xo
+	fidivr word [screen_size_x]		;screen_size_x/(Xf-Xo)
+	fimul word [graph_xo]			;Xo*screen_size_x/(Xf-Xo)
+	fchs							;-Xo*screen_size_x/(Xf-Xo)
+
+	fistp word [screenX]			;Position of x=0						F-Stack:0
+	mov [screenY], word 0x0			;Set to origin
+	mov word [draw_fill_rect_w], 2
+	mov word [draw_fill_rect_h], 480;Screen height
+	push 0x7						;Gray
+	call DrawFilledRectangle
+	add ESP, 2
+
+	GraphGuideLines_done:
+	ret
+
+
+GraphNormalFunction:
+	fild word [graph_xf]			;x_step = (xf-xo)/horizontal_pixels		F-Stack:1
+	fisub word [graph_xo]
+	fidiv word [screen_size_x]
+	fstp qword [graph_x_step]		;F-Stack:0
+
+	fild word [graph_xo]			;Grab xo and set is as current x		F-Stack:1
+	fst qword [graph_current_x]		;Store but don't pop it, we will use it in main loop
+	mov [screenX], word 0
+	;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	GraphNormalFunction_main_loop:
+		ficom word [graph_xf]			;cmp current_x, xf
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+		ja GraphNormalFunction_main_loop_end
+
+;		MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [screenX]
+;		MACRO_PRINT_STRING gen_output_buff
+;		MACRO_INPUT_CHAR_NO_ECO
+		;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+		cmp [graph_active_fun], byte 0x0
+		je GraphFunction_skip_normal
+			call CalculateFunctionY
+			call DrawFunctionPoint
+		GraphFunction_skip_normal:
+		cmp [graph_active_der], byte 0x0
+		je GraphFunction_skip_derivative
+			call CalculateDerivativeY
+			call DrawDerivativePoint
+		GraphFunction_skip_derivative:
+		cmp [graph_active_int], byte 0x0
+		je GraphFunction_skip_integral
+			call CalculateIntegralY
+			call DrawIntegralPoint
+		GraphFunction_skip_integral:
+		;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+		fadd qword [graph_x_step]		;add x_step to float stack
+		fst qword [graph_current_x]		;store float stack top to current_x
+		add [screenX], word 1
+
+
+		jmp GraphNormalFunction_main_loop
+
+	;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	GraphNormalFunction_main_loop_end:
+	fistp qword [graph_current_x]		;clean up. F-Stack:0
+	ret
+
+DrawIntegralPoint:			;Need already set: graph_result_y, screenX
+	fld qword [graph_result_y_i]		;									F-Stack:1
 	fabs								;For comparing range
 	ficomp word [graph_y_size]			;cmp graph_result_y, graph_y_size	F-Stack:0
 	fnstsw ax							;flags to ax
 	sahf								;ax to cpu flags
-	ja DrawFunctionPoint_outside_range  ;TODO uncomment
+	ja DrawIntegralPoint_outside_range
 
 	fild word[screen_size_y]			;									F-Stack:1
 	fidiv word [graph_y_size]			;scale screen size
 	fidiv dword [graph_num_2]			;/2 since +- range
-	fmul qword [t_graph_result_y]
+	fmul qword [graph_result_y_i]
 
 ;	;Calculate Y position in screen
 ;	;If point is positive, the value will be smaller (closer to top of screen)
 ;	;If point is negative, the value will be greater (closer to bottom of screen)
 	fisubr word [screen_center_y]		; ST(0) = screen_center_y-ST(0)
 
-	fist word [screenY]					;									F-Stack:0
+	fistp word [screenY]					;									F-Stack:0
 	;screenX already set by loop
-	mov word [draw_fill_rect_w], 1		;TODO change to 1
-	mov word [draw_fill_rect_h], 5		;TODO adjust for best results
-	push 0x4							;Red. (R:Funct G:Deriv B:Integ)
+	mov word [draw_fill_rect_w], 1
+	mov word [draw_fill_rect_h], 6		;TODO adjust for best results
+	push 0x1							;Red. (R0x4:Funct G0x2:Deriv B0x1:Integ)
+	call DrawFilledRectangle
+	add ESP, 2
+
+	DrawIntegralPoint_outside_range:
+	;TODO do something about it? idk
+	ret
+
+
+DrawDerivativePoint:			;Need already set: graph_result_y, screenX
+	fld qword [graph_result_y_d]		;									F-Stack:1
+	fabs								;For comparing range
+	ficomp word [graph_y_size]			;cmp graph_result_y, graph_y_size	F-Stack:0
+	fnstsw ax							;flags to ax
+	sahf								;ax to cpu flags
+	ja DrawDerivativePoint_outside_range
+
+	fild word[screen_size_y]			;									F-Stack:1
+	fidiv word [graph_y_size]			;scale screen size
+	fidiv dword [graph_num_2]			;/2 since +- range
+	fmul qword [graph_result_y_d]
+
+;	;Calculate Y position in screen
+;	;If point is positive, the value will be smaller (closer to top of screen)
+;	;If point is negative, the value will be greater (closer to bottom of screen)
+	fisubr word [screen_center_y]		; ST(0) = screen_center_y-ST(0)
+
+	fistp word [screenY]					;									F-Stack:0
+	;screenX already set by loop
+	mov word [draw_fill_rect_w], 1
+	mov word [draw_fill_rect_h], 6		;TODO adjust for best results
+	push 0x2							;Red. (R0x4:Funct G0x2:Deriv B0x1:Integ)
+	call DrawFilledRectangle
+	add ESP, 2
+
+	DrawDerivativePoint_outside_range:
+	;TODO do something about it? idk
+	ret
+
+
+DrawFunctionPoint:			;Need already set: graph_result_y, screenX
+	fld qword [graph_result_y]			;									F-Stack:1
+	fabs								;For comparing range
+	ficomp word [graph_y_size]			;cmp graph_result_y, graph_y_size	F-Stack:0
+	fnstsw ax							;flags to ax
+	sahf								;ax to cpu flags
+	ja DrawFunctionPoint_outside_range
+
+	fild word[screen_size_y]			;									F-Stack:1
+	fidiv word [graph_y_size]			;scale screen size
+	fidiv dword [graph_num_2]			;/2 since +- range
+	fmul qword [graph_result_y]
+
+;	;Calculate Y position in screen
+;	;If point is positive, the value will be smaller (closer to top of screen)
+;	;If point is negative, the value will be greater (closer to bottom of screen)
+	fisubr word [screen_center_y]		; ST(0) = screen_center_y-ST(0)
+
+	fistp word [screenY]					;									F-Stack:0
+	;screenX already set by loop
+	mov word [draw_fill_rect_w], 1
+	mov word [draw_fill_rect_h], 6		;TODO adjust for best results
+	push 0x4							;Red. (R0x4:Funct G0x2:Deriv B0x1:Integ)
 	call DrawFilledRectangle
 	add ESP, 2
 
 	DrawFunctionPoint_outside_range:
+	;TODO do something about it? idk
 	ret
-
-
-GraphNormalFunction:
-	;Clean graph_x_step to 0
-;	xor eax, eax
-;	mov [graph_x_step], eax
-;	mov [graph_x_step+4], eax
-;
-;	fld qword [graph_x_step]
-
-	fild dword [graph_xf]			;x_step = (xf-xo)/horizontal_pixels		F-Stack:1
-	fisub dword [graph_xo]
-	fidiv word [screen_size_x]
-	fstp qword [graph_x_step]		;F-Stack:0
-
-	fild dword [graph_xo]			;Grab xo and set is as current x		F-Stack:1
-	fst qword [graph_current_x]		;Store but don't pop it, we will use it in main loop
-	mov [screenX], word 0
-	;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-	GraphNormalFunction_main_loop:
-		ficom dword [graph_xf]			;cmp current_x, xf
-		fnstsw ax						;flags to ax
-		sahf							;ax to cpu flags
-		jg GraphNormalFunction_main_loop_end
-
-		call CalculateFunctionY
-		call DrawFunctionPoint
-
-		fadd qword [graph_x_step]		;add x_step to float stack
-		fst qword [graph_current_x]		;store float stack top to current_x
-		add [screenX], byte 1
-
-
-		jmp GraphNormalFunction_main_loop
-
-
-	GraphNormalFunction_main_loop_end:
-	fistp qword [graph_current_x]		;clean up. F-Stack:0
-
-
-	ret
-
 
 CalculateFunctionY: ; graph_current_x needs to be set before this call
 	;Clean result to 0
@@ -340,11 +512,6 @@ UpdateDerivativeCoefficients:
 	ret
 
 UpdateIntegralCoefficients:
-	;Clean result to 0
-	xor eax, eax
-	mov [graph_result_y], eax
-	mov [graph_result_y+4], eax			;Because of double precision
-
 	MACRO_UPDATE_INTEGRAL_COEFFICIENT 5
 	MACRO_UPDATE_INTEGRAL_COEFFICIENT 4
 	MACRO_UPDATE_INTEGRAL_COEFFICIENT 3
@@ -672,8 +839,7 @@ PrintFunctionIntegral:
 	MACRO_PRINT_STRING str_press_any
 	MACRO_INPUT_CHAR_NO_ECO
 	ret
-GraphFunction:
-	ret
+
 SolveByNewton:
 	ret
 SolveBySteffensen:
@@ -852,7 +1018,3 @@ MaxCommonDivisor:					;STACK has both numbers
 
 
 
-;	fild dword [graph_xf]
-;	ficom dword [graph_xo]
-;	fnstsw ax
-;	sahf
