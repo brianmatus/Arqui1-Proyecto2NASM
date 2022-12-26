@@ -40,17 +40,21 @@ str_x_1:			db "x ","$"
 str_x_0:			db " ","$"
 str_int_const:		db "+C","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-deleteme_test: 		db "1",0, "$"
-;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 options_array:		dw main_option1,main_option2,main_option3,main_option4,main_option5,main_option6,main_option7,main_option8
 text_ln_r:			db 0xA,0dh, "$"
 
 SECTION .data
+fpu_control_word:	dw 0
+screen_size_x:		dw 640
+screen_size_y:		dw 480
+screen_center_y:	dw 240
 screenX:			dw 0x0
 screenY:			dw 0x0
+screenY_float:		dd 0x0
 
 function_exists:	db 0
-coef_5: 			dw 10  ; x^5
+
+coef_5: 			dw 5  ; x^5
 coef_5_sign: 		db 0
 coef_4: 			dw 4  ; x^4
 coef_4_sign: 		db 0
@@ -60,7 +64,7 @@ coef_2: 			dw 2  ; x^2
 coef_2_sign: 		db 1
 coef_1: 			dw 1  ; x
 coef_1_sign: 		db 1
-coef_0: 			dw 10 ; constant
+coef_0: 			dw 1 ; constant
 coef_0_sign: 		db 0
 
 coef_5_d: 			dw 0  ; d/dx x^5
@@ -82,7 +86,21 @@ coef_1_i_den: 		dw 0  ; x
 coef_0_i_num: 		dw 0 ; constant
 coef_0_i_den: 		dw 0 ; constant
 
-
+coef_c:				dw 1 ; +C
+coef_c_sign:		dw 1 ; +C
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+graph_result_y:		dq 2.00000
+graph_result_y_d:	dq 0.0
+graph_result_y_i:	dq 0.0
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+graph_current_x:	dq 0
+graph_xo:			dd -2
+graph_xf:			dd 2
+graph_x_step:		dq 0.0
+graph_y_size:		dw 10	;+- 10
+graph_num_2:		dd 2
+t_graph_result_y:   dq 7.5
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 draw_fill_rect_w:	dw 0x0
 draw_fill_rect_w_c:	dw 0x0
 draw_fill_rect_h:	dw 0x0
@@ -93,7 +111,6 @@ gen_output_buff: 		times 30 db 0x0
 
 SECTION .bss
 
-
 SECTION .text
 
 global _start
@@ -101,14 +118,199 @@ global _start
 	 org 0x100	  	;It's a .COM program (Start program at offset 100h)
 
 _start:
+	CLEARSCREEN
+
+	;TODO Set rounding mode of floats to Math.Floor??? idk
 
 	;DEBUG
-;	mov AX, [coef_5_i_num]
+
+	call UpdateDerivativeCoefficients
+	call UpdateIntegralCoefficients
+
+
+	mov [screenX], word 220
+	mov [screenY], word 2
+
+
+	call DrawFunctionPoint
+	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [screenY]
+	MACRO_PRINT_STRING gen_output_buff
+	MACRO_INPUT_CHAR_NO_ECO
+
+
+;	call GraphFunction
+;	MACRO_INPUT_CHAR_NO_ECO
+
 	;END DEBUG
 
 	call UserMainOptionInput
 	call ExitApplication
 
+
+
+
+
+DrawFunctionPoint:			;Need already set: t_graph_result_y, screenX
+	fld qword [t_graph_result_y]			;									F-Stack:1
+	fabs								;For comparing range
+	ficomp word [graph_y_size]			;cmp graph_result_y, graph_y_size	F-Stack:0
+	fnstsw ax							;flags to ax
+	sahf								;ax to cpu flags
+	ja DrawFunctionPoint_outside_range  ;TODO uncomment
+
+	fild word[screen_size_y]			;									F-Stack:1
+	fidiv word [graph_y_size]			;scale screen size
+	fidiv dword [graph_num_2]			;/2 since +- range
+	fmul qword [t_graph_result_y]
+
+;	;Calculate Y position in screen
+;	;If point is positive, the value will be smaller (closer to top of screen)
+;	;If point is negative, the value will be greater (closer to bottom of screen)
+	fisubr word [screen_center_y]		; ST(0) = screen_center_y-ST(0)
+
+	fist word [screenY]					;									F-Stack:0
+	;screenX already set by loop
+	mov word [draw_fill_rect_w], 1		;TODO change to 1
+	mov word [draw_fill_rect_h], 5		;TODO adjust for best results
+	push 0x4							;Red. (R:Funct G:Deriv B:Integ)
+	call DrawFilledRectangle
+	add ESP, 2
+
+	DrawFunctionPoint_outside_range:
+	ret
+
+
+GraphNormalFunction:
+	;Clean graph_x_step to 0
+;	xor eax, eax
+;	mov [graph_x_step], eax
+;	mov [graph_x_step+4], eax
+;
+;	fld qword [graph_x_step]
+
+	fild dword [graph_xf]			;x_step = (xf-xo)/horizontal_pixels		F-Stack:1
+	fisub dword [graph_xo]
+	fidiv word [screen_size_x]
+	fstp qword [graph_x_step]		;F-Stack:0
+
+	fild dword [graph_xo]			;Grab xo and set is as current x		F-Stack:1
+	fst qword [graph_current_x]		;Store but don't pop it, we will use it in main loop
+	mov [screenX], word 0
+	;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	GraphNormalFunction_main_loop:
+		ficom dword [graph_xf]			;cmp current_x, xf
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+		jg GraphNormalFunction_main_loop_end
+
+		call CalculateFunctionY
+		call DrawFunctionPoint
+
+		fadd qword [graph_x_step]		;add x_step to float stack
+		fst qword [graph_current_x]		;store float stack top to current_x
+		add [screenX], byte 1
+
+
+		jmp GraphNormalFunction_main_loop
+
+
+	GraphNormalFunction_main_loop_end:
+	fistp qword [graph_current_x]		;clean up. F-Stack:0
+
+
+	ret
+
+
+CalculateFunctionY: ; graph_current_x needs to be set before this call
+	;Clean result to 0
+    xor eax, eax
+	mov [graph_result_y], eax
+	mov [graph_result_y+4], eax
+
+	MACRO_FIND_FUNC_X_VALUE_OF_COEF 5
+	MACRO_FIND_FUNC_X_VALUE_OF_COEF 4
+	MACRO_FIND_FUNC_X_VALUE_OF_COEF 3
+	MACRO_FIND_FUNC_X_VALUE_OF_COEF 2
+	MACRO_FIND_FUNC_X_VALUE_OF_COEF 1
+
+	;Special case of constant coefficient
+	cmp [coef_0], word 0				;if coefficient is 0, skip
+	je CalculateFunctionY_skip_0
+
+	fild word [coef_0]					;Convert coef to float				F-Stack:1
+
+	cmp [coef_0_sign], byte 0x0			;Its positive?
+	je CalculateFunctionY_x_0_positive
+	fchs								;(Change ST(0) sign)
+	CalculateFunctionY_x_0_positive:
+
+	fld qword [graph_result_y]			;Load previous stored result		F-Stack:2
+	faddp								;Add last coef to result			F-Stack:1
+	fstp qword [graph_result_y]			;Store it as float					F-Stack:0
+	CalculateFunctionY_skip_0:
+
+	ret
+
+CalculateDerivativeY: ; graph_current_x needs to be set before this call
+	;Clean result to 0
+    xor eax, eax
+	mov [graph_result_y_d], eax
+	mov [graph_result_y_d+4], eax
+
+	MACRO_FIND_DERIV_X_VALUE_OF_COEF 5
+	MACRO_FIND_DERIV_X_VALUE_OF_COEF 4
+	MACRO_FIND_DERIV_X_VALUE_OF_COEF 3
+	MACRO_FIND_DERIV_X_VALUE_OF_COEF 2
+
+	;Special case of x^1 coefficient
+	cmp [coef_1], word 0					;if coefficient is 0, skip
+	je CalculateDerivativeY_skip_1
+
+	fild word [coef_1]						;Convert coef to float				F-Stack:1
+
+	cmp [coef_1_sign], byte 0x0				;Its positive?
+	je CalculateDerivativeY_x_1_positive
+	fchs									;(Change ST(0) sign)
+	CalculateDerivativeY_x_1_positive:
+
+	fld qword [graph_result_y_d]			;Load previous stored result		F-Stack:2
+	faddp									;Add last coef to result			F-Stack:1
+	fstp qword [graph_result_y_d]			;Store it as float					F-Stack:0
+	CalculateDerivativeY_skip_1:
+
+	ret
+
+CalculateIntegralY: ; graph_current_x needs to be set before this call
+	;Clean result to 0
+    xor eax, eax
+	mov [graph_result_y_i], eax
+	mov [graph_result_y_i+4], eax
+
+	MACRO_FIND_INTEG_X_VALUE_OF_COEF 5
+	MACRO_FIND_INTEG_X_VALUE_OF_COEF 4
+	MACRO_FIND_INTEG_X_VALUE_OF_COEF 3
+	MACRO_FIND_INTEG_X_VALUE_OF_COEF 2
+	MACRO_FIND_INTEG_X_VALUE_OF_COEF 1
+	MACRO_FIND_INTEG_X_VALUE_OF_COEF 0
+
+	;Special case of integration constant
+	cmp [coef_c], word 0					;if coefficient is 0, skip
+	je CalculateIntegralY_skip_c
+
+	fild word [coef_c]						;Convert coef to float				F-Stack:1
+
+	cmp [coef_c_sign], byte 0x0				;Its positive?
+	je CalculateIntegralY_x_c_positive
+	fchs									;(Change ST(0) sign)
+	CalculateIntegralY_x_c_positive:
+
+	fld qword [graph_result_y_i]			;Load previous stored result		F-Stack:2
+	faddp									;Add last coef to result			F-Stack:1
+	fstp qword [graph_result_y_i]			;Store it as float					F-Stack:0
+	CalculateIntegralY_skip_c:
+
+	ret
 
 EnterFunctionCoefficients:
 	;COEF x^5
@@ -138,6 +340,11 @@ UpdateDerivativeCoefficients:
 	ret
 
 UpdateIntegralCoefficients:
+	;Clean result to 0
+	xor eax, eax
+	mov [graph_result_y], eax
+	mov [graph_result_y+4], eax			;Because of double precision
+
 	MACRO_UPDATE_INTEGRAL_COEFFICIENT 5
 	MACRO_UPDATE_INTEGRAL_COEFFICIENT 4
 	MACRO_UPDATE_INTEGRAL_COEFFICIENT 3
@@ -146,15 +353,12 @@ UpdateIntegralCoefficients:
 	MACRO_UPDATE_INTEGRAL_COEFFICIENT 0
 	ret
 
-
 ParseString:	;[SI] as pointer,   returns: AX: result BX: sign  CX:return code
     xor ax, ax 	; Clean needed registers
     xor bx, bx 	;
     xor cx, cx 	;
 
     mov di, 10 ; set the base to 10
-
-	;TODO checar primer caracter por un signo
 
 	mov bl, [SI] ; load the current character into bl
 
@@ -494,8 +698,9 @@ DrawFilledRectangle:	;draw_fill_rect_w, draw_fill_rect_h, screenX, screenY
 			cmp SI, DI						;Have we reached desired column for current line?
 			je DrawVerticalLine_hor_end
 
-			push 0x2
-;			mov AL, 0x2						;Color Green
+			xor AH, AH
+			mov AL, [ESP+2]						;Color Green
+			push AX
 			call DrawPixel
 			add ESP, 2
 			inc word [draw_fill_rect_w_c]	;Move 1 pixel horizontally
@@ -635,9 +840,19 @@ MaxCommonDivisor:					;STACK has both numbers
 	ret
 
 
-
-;	mov word [screenX], 0x140
-;	mov word [screenY], 0x0F0
-;	mov word [draw_fill_rect_w], 0x1E
-;	mov word [draw_fill_rect_h], 0xA
+;	mov [screenX], word 630
+;	mov [screenY], word 470
+;	mov word [draw_fill_rect_w], 10
+;	mov word [draw_fill_rect_h], 10
+;	push 0x2		;Green
 ;	call DrawFilledRectangle
+;	add ESP, 2
+;	MACRO_INPUT_CHAR_NO_ECO
+
+
+
+
+;	fild dword [graph_xf]
+;	ficom dword [graph_xo]
+;	fnstsw ax
+;	sahf

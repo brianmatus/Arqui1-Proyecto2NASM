@@ -68,13 +68,13 @@
 
 
 %macro MACRO_PRINT_FUNC_COEF 1
-	cmp [coef_%1_sign], byte 0			;Compare Sign
+	cmp [coef_%1_sign], byte 0					;Compare Sign
 	je m_print_func_coef_%1_pos
-	MACRO_PRINT_CHAR 0x2d				;If neg, print -
+	MACRO_PRINT_CHAR 0x2d						;If neg, print -
 	jmp m_print_func_coef_%1_number
 
 	m_print_func_coef_%1_pos:
-	MACRO_PRINT_CHAR 0x2b				;If pos, print +
+	MACRO_PRINT_CHAR 0x2b						;If pos, print +
 
 	m_print_func_coef_%1_number:
 	MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [coef_%1]
@@ -150,4 +150,115 @@
 	div BX
 	mov [coef_%1_i_den], AX	;Save integral denominator
 
+%endmacro
+
+%macro MACRO_FIND_FUNC_X_VALUE_OF_COEF 1
+	;/////////////////////////////////////////////COEF 5////////////////////////////////////////////////////////////////
+	cmp [coef_%1], word 0						;if coefficient is 0
+	je CalculateFunctionY_skip_%1				;then skip
+
+	xor CX,CX									;Clear counter (necessary?)
+	mov CX, %1									;Counter to multiply x n-times (x^n)
+
+	cmp CX, 0									;Have we reached x^n?
+	je CalculateFunctionY_%1_coef_mult			;Then go to coefficient
+	fld qword [graph_current_x]					;grab x									F-Stack:1
+	sub CX, 1									;one more close to x^n
+
+	CalculateFunctionY_%1_loop:					;Multiply by x until x^n
+		cmp CX, 0								;Have we reached x^n?
+		je CalculateFunctionY_%1_coef_mult		;Then go to coefficient
+		fmul qword [graph_current_x]			;ST(0)*x
+		sub CX, 1								;one more close to x^n
+		jmp CalculateFunctionY_%1_loop
+
+	CalculateFunctionY_%1_coef_mult:
+	fimul word [coef_%1]						;At this point, we have |coef|*x^n
+
+	cmp [coef_%1_sign], byte 0x0				;Its positive?
+	je CalculateFunctionY_x_%1_positive			;Skip sign change
+	fchs
+
+	CalculateFunctionY_x_%1_positive:
+	;Now we have coef*x^n
+	fld qword [graph_result_y]					;load result by previous coefficient	F-Stack:2
+	faddp										;Add them								F-Stack:1
+	fstp qword [graph_result_y]					;Store it								F-Stack:0
+	CalculateFunctionY_skip_%1:
+%endmacro
+
+
+%macro MACRO_FIND_DERIV_X_VALUE_OF_COEF 1
+	;/////////////////////////////////////////////COEF 5////////////////////////////////////////////////////////////////
+	cmp [coef_%1_d], word 0						;if coefficient is 0
+	je CalculateDerivativeY_skip_%1				;then skip
+
+	xor CX,CX									;Clear counter (necessary?)
+	mov CX, %1									;Counter to multiply x n-times (x^n)
+	sub CX, 1									;Because of derivative
+
+	cmp CX, 0									;Have we reached x^n?
+	je CalculateDerivativeY_%1_coef_mult		;Then go to coefficient
+	fld qword [graph_current_x]					;grab x									F-Stack:1
+	sub CX, 1									;one more close to x^n
+
+	CalculateDerivativeY_%1_loop:				;Multiply by x until x^n
+		cmp CX, 0								;Have we reached x^n?
+		je CalculateDerivativeY_%1_coef_mult	;Then go to coefficient
+		fmul qword [graph_current_x]			;ST(0)*x
+		sub CX, 1								;one more close to x^n
+		jmp CalculateDerivativeY_%1_loop
+
+	CalculateDerivativeY_%1_coef_mult:
+	fimul word [coef_%1_d]						;At this point, we have |coef|*x^n
+
+	cmp [coef_%1_sign], byte 0x0				;Its positive?
+	je CalculateDerivativeY_x_%1_positive		;Skip sign change
+	fchs
+
+	CalculateDerivativeY_x_%1_positive:
+	;Now we have coef*x^n
+	fld qword [graph_result_y_d]				;load result by previous coefficient	F-Stack:2
+	faddp										;Add them								F-Stack:1
+	fstp qword [graph_result_y_d]				;Store it								F-Stack:0
+	CalculateDerivativeY_skip_%1:
+%endmacro
+
+
+
+%macro MACRO_FIND_INTEG_X_VALUE_OF_COEF 1
+	;/////////////////////////////////////////////COEF 5////////////////////////////////////////////////////////////////
+	cmp [coef_%1_i_num], word 0					;if coefficient is 0
+	je CalculateIntegralY_skip_%1				;then skip
+
+	xor CX,CX									;Clear counter (necessary?)
+	mov CX, %1									;Counter to multiply x n-times (x^n)
+	add CX, 1									;Because of integral
+
+	cmp CX, 0									;Have we reached x^n?
+	je CalculateIntegralY_%1_coef_mult			;Then go to coefficient
+	fld qword [graph_current_x]					;grab x									F-Stack:1
+	sub CX, 1									;one more close to x^n
+
+	CalculateIntegralY_%1_loop:					;Multiply by x until x^n
+		cmp CX, 0								;Have we reached x^n?
+		je CalculateIntegralY_%1_coef_mult		;Then go to coefficient
+		fmul qword [graph_current_x]			;ST(0)*x
+		sub CX, 1								;one more close to x^n
+		jmp CalculateIntegralY_%1_loop
+
+	CalculateIntegralY_%1_coef_mult:
+	fimul word [coef_%1_i_num]
+	fidiv word [coef_%1_i_den]					;At this point, we have |coef|*x^n
+
+	cmp [coef_%1_sign], byte 0x0				;Its positive?
+	je CalculateIntegralY_x_%1_positive			;Skip sign change
+	fchs
+
+	CalculateIntegralY_x_%1_positive:
+	;Now we have coef*x^n
+	fld qword [graph_result_y_i]				;load result by previous coefficient	F-Stack:2
+	faddp										;Add them								F-Stack:1
+	fstp qword [graph_result_y_i]				;Store it								F-Stack:0
+	CalculateIntegralY_skip_%1:
 %endmacro
