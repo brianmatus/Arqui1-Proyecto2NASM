@@ -14,7 +14,7 @@
 
 
 %macro MACRO_PRINT_CHAR 1
-	xor DX, Dx
+	xor DX, DX
 	mov AH, 0x6 			; Print String
 	mov DL, %1	; Start address of message
 	int 0x21

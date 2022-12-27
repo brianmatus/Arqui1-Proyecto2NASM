@@ -40,6 +40,8 @@ str_ask_graph_fun:	db "Graficar funcion original? (Y/n)","$"
 str_ask_graph_der:	db "Graficar funcion derivada? (Y/n)","$"
 str_ask_graph_int:	db "Graficar funcion integral? (Y/n)","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+str_iter_no:		db "Iteracion numero #","$"
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 str_x_6:			db "x^6 ","$"
 str_x_5:			db "x^5 ","$"
 str_x_4:			db "x^4 ","$"
@@ -95,19 +97,20 @@ coef_1_i_den: 		dw 0  ; x
 coef_0_i_num: 		dw 0 ; constant
 coef_0_i_den: 		dw 0 ; constant
 
-coef_c:				dw 1 ; +C
-coef_c_sign:		dw 1 ; +C
+coef_c:				dw 0 ; +C
+coef_c_sign:		dw 0 ; +C
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-graph_result_y:		dq 7.5
+graph_result_y:		dq 0.0
 graph_result_y_d:	dq 0.0
 graph_result_y_i:	dq 0.0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 graph_current_x:	dq 0
-graph_xo:			dw -1
-graph_xf:			dw 9
+graph_xo:			dw 0
+graph_xf:			dw 0
 graph_x_step:		dq 0.0
 graph_y_size:		dw 15	; +-range
 graph_num_2:		dd 2
+graph_num_10_f:		dd 10.0
 graph_random_int: 	dw 0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 graph_active_fun:	db 1
@@ -118,12 +121,24 @@ draw_fill_rect_w:	dw 0x0
 draw_fill_rect_w_c:	dw 0x0
 draw_fill_rect_h:	dw 0x0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-debug_var_float:	dq 42.0
-debug_var_word:		dq 42.0
+numeric_max_iter:	dw 1
+numeric_cur_iter:	dw 1
+numeric_tolerance:	dq 0.0000001
+numeric_limit_inf:	dw -2
+numeric_limit_sup:	dw -1
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+numeric_disp_decim:	dw 10
+numeric_dec_count:	dw 0
+numeric_trans_num:	dq 12.0
+numeric_remainder:	dw 0
+numeric_chars:		dw 0
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+debug_test_float:	dq -12.1234567987654321
+debug_trash:		dq 0.0
 
-inStrBuf_p:				dw 0x0
-inStrBuf:  				times 30 db 0x0
-gen_output_buff: 		times 30 db 0x0
+inStrBuf_p:			dw 0x0
+inStrBuf:  			times 30 db 0x0
+gen_output_buff: 	times 30 db 0x0
 
 SECTION .bss
 
@@ -136,22 +151,179 @@ global _start
 _start:
 	CLEARSCREEN
 
-	;TODO Set rounding mode of floats to Math.Floor??? idk
+	finit
+	
+	fld qword [debug_test_float]
+	mov SI, gen_output_buff
+	call FloatToString
 
-	;DEBUG
+	MACRO_PRINT_STRING gen_output_buff
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_INPUT_CHAR_NO_ECO
 
-;	call GraphGuideLines
+
+
+;	;DEBUG
+;	call UpdateDerivativeCoefficients
+;	call UpdateIntegralCoefficients
 ;	MACRO_INPUT_CHAR_NO_ECO
-;	mov AX, word [debug_var_word]
-;	fld qword [debug_var_float]
 
+;	call SolveByNewton
+;	MACRO_INPUT_CHAR_NO_ECO
 
-	call UpdateDerivativeCoefficients
-	call UpdateIntegralCoefficients
 	;END DEBUG
 
 	call UserMainOptionInput
 	call ExitApplication
+
+
+
+;Parses number passed in fpu-stack. Buffer set at SI
+FloatToString:		;														F-stack:1 (signed number)
+	mov AX, word [numeric_disp_decim]
+	mov word [numeric_dec_count], AX
+    FloatToString_loop1:
+		cmp word [numeric_dec_count], 0
+		je FloatToString_loop1_end
+
+		fmul dword [graph_num_10_f]
+
+		sub word [numeric_dec_count], 1
+		jmp FloatToString_loop1
+    FloatToString_loop1_end:
+
+	fst qword [numeric_trans_num]
+	fst qword [debug_test_float]	;TODO deleteme, debug
+
+	mov AX, word [numeric_disp_decim]
+	mov word [numeric_dec_count], AX
+
+	;Number at this point is supposed to be "integer". With the variable numeric_dec_count set to number of decimals
+	ftst							;Special case: number is 0 (cmp ST(0), 0)
+	fnstsw ax						;flags to ax
+	sahf							;ax to cpu flags
+	jnz FloatToString_not_zero
+	mov [SI], byte 0x30				;Adds 0
+	inc SI
+	mov [SI], byte 46				;Adds .
+	inc SI
+	mov [SI], byte 0x30				;Adds 0
+	inc SI
+	jmp FloatToString_normal_exit	;goto exit
+
+	;###################################################################################################################
+	FloatToString_not_zero:
+	;Last comparison was cmp ST(0), 0
+	jnc FloatToString_not_negative
+	mov [SI], byte 45				;If not, add - to string buffer
+	inc SI
+	fchs							;Make number positive for simpler operations
+	;###################################################################################################################
+	FloatToString_not_negative:
+
+	fstp qword [numeric_trans_num]		;													F-stack:0
+	mov CX, 0x0							;for counting chars pushed
+
+	FloatToString_reverse_loop:			;Every loop shoud start with empty stack
+		fld	qword [numeric_trans_num]	;													F-stack:1(num)
+		ftst							;Have we reached 0 as base number? (cmp ST(0),0)
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+		je FloatToString_exit1			;Each iteration should come with stack clean
+
+		fstp qword [debug_trash] 		;Clean stack										F-stack:0
+		fld dword [graph_num_10_f]		;													F-stack:1 (10)
+		fld qword [numeric_trans_num]	;													F-stack:2 (num,10)
+		fprem							;													F-stack:2 (remainder,10)
+;		frndint							;Just in case
+
+		fistp word [numeric_remainder]		;Store to treat it as an integer				F-stack:1 (10)
+		add word [numeric_remainder], '0'	;Make it ascii
+		push word [numeric_remainder]
+		add CX, byte 0x1					;charsInStack++
+
+		cmp word [numeric_dec_count], 1		;It's time for decimal point?
+		jne FloatToString_exit1_no_decimal_point
+		push word 46					;Add .
+		add CX, byte 0x1					;charsInStack++
+		FloatToString_exit1_no_decimal_point:
+
+		;The reference number needs to be r-shifted by 1 digit (in decimal)
+		fld qword [numeric_trans_num]		;												F-stack:2(number,10)
+		fdivrp								;												F-stack:1(new_number)
+		frndint
+
+		fstp qword [numeric_trans_num]		;												F-stack:0
+
+		sub word [numeric_dec_count], 1		;1 less decimal remaining
+		jmp FloatToString_reverse_loop
+
+	FloatToString_exit1:
+		FloatToString_normal_loop:
+		cmp CX, 0							;Are chars still un stack?
+		je FloatToString_normal_exit
+
+
+		mov AX, [ESP]						;Get it
+		mov [SI], AX						;Add it to buffer
+		inc SI
+		sub CX, 1							;charsInStack--
+		add ESP, 2							;Clean stack
+
+		jmp FloatToString_normal_loop
+
+	FloatToString_normal_exit:
+;		mov [SI], word 0			;null-terminate buffer
+;		inc SI
+		mov [SI], byte 0x24 		;$ for printing int21hs compliance
+		ret
+
+
+SolveByNewton:
+
+	;Let initial guess be midpoint of limits
+	fild word [numeric_limit_inf]				;									F-stack:1
+	fiadd word [numeric_limit_sup]
+	fidiv dword [graph_num_2]
+	fst qword [debug_test_float]
+	fstp qword [graph_current_x]				;									F-stack:0
+
+	mov word [numeric_cur_iter], 1
+
+	SolveByNewton_loop:
+		mov AX, word [numeric_max_iter]
+		cmp word [numeric_cur_iter], AX			;If we have reached max iters
+		jg SolveByNewton_no_solution			;Exit without solution found
+
+		;Print current iter info
+		MACRO_PRINT_STRING str_iter_no
+		MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [numeric_cur_iter]
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+
+		call CalculateDerivativeY
+		call CalculateFunctionY
+
+		fld qword [graph_result_y]		;f(Xn)								F-stack:1
+		fdiv qword [graph_result_y_d]	;f(Xn)/f'(Xn)
+
+		fld qword [numeric_tolerance]	;									F-stack:2
+		fcomp							;cmp TOL, error						F-stack:1
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+		ja SolveByNewton_solution_found
+
+		fsubr qword [graph_current_x]	;Xn - f(Xn)/f'(Xn)
+		add word [numeric_cur_iter], 1	;current_iter++
+		fstp qword [graph_current_x]	;									F-stack:0
+		jmp SolveByNewton_loop
+
+	SolveByNewton_solution_found:
+
+	SolveByNewton_no_solution:
+
+	ret
+
 
 
 GraphFunction:
@@ -323,13 +495,12 @@ DrawIntegralPoint:			;Need already set: graph_result_y, screenX
 	fistp word [screenY]					;									F-Stack:0
 	;screenX already set by loop
 	mov word [draw_fill_rect_w], 1
-	mov word [draw_fill_rect_h], 6		;TODO adjust for best results
+	mov word [draw_fill_rect_h], 7
 	push 0x1							;Red. (R0x4:Funct G0x2:Deriv B0x1:Integ)
 	call DrawFilledRectangle
 	add ESP, 2
 
 	DrawIntegralPoint_outside_range:
-	;TODO do something about it? idk
 	ret
 
 
@@ -351,16 +522,15 @@ DrawDerivativePoint:			;Need already set: graph_result_y, screenX
 ;	;If point is negative, the value will be greater (closer to bottom of screen)
 	fisubr word [screen_center_y]		; ST(0) = screen_center_y-ST(0)
 
-	fistp word [screenY]					;									F-Stack:0
+	fistp word [screenY]				;									F-Stack:0
 	;screenX already set by loop
 	mov word [draw_fill_rect_w], 1
-	mov word [draw_fill_rect_h], 6		;TODO adjust for best results
+	mov word [draw_fill_rect_h], 7
 	push 0x2							;Red. (R0x4:Funct G0x2:Deriv B0x1:Integ)
 	call DrawFilledRectangle
 	add ESP, 2
 
 	DrawDerivativePoint_outside_range:
-	;TODO do something about it? idk
 	ret
 
 
@@ -385,13 +555,12 @@ DrawFunctionPoint:			;Need already set: graph_result_y, screenX
 	fistp word [screenY]					;									F-Stack:0
 	;screenX already set by loop
 	mov word [draw_fill_rect_w], 1
-	mov word [draw_fill_rect_h], 6		;TODO adjust for best results
+	mov word [draw_fill_rect_h], 7
 	push 0x4							;Red. (R0x4:Funct G0x2:Deriv B0x1:Integ)
 	call DrawFilledRectangle
 	add ESP, 2
 
 	DrawFunctionPoint_outside_range:
-	;TODO do something about it? idk
 	ret
 
 CalculateFunctionY: ; graph_current_x needs to be set before this call
@@ -840,8 +1009,6 @@ PrintFunctionIntegral:
 	MACRO_INPUT_CHAR_NO_ECO
 	ret
 
-SolveByNewton:
-	ret
 SolveBySteffensen:
 	ret
 ExitApplication:
@@ -922,7 +1089,7 @@ PrintMainMenu:
 
 
 ;Prints number passed in stack to buffer set at SI
-NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, symbol.
+NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, sign.
 	mov AX, [ESP+2]
 	mov CX, 0x0						;for counting chars pushed
 
