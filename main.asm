@@ -104,7 +104,7 @@ graph_result_y:		dq 0.0
 graph_result_y_d:	dq 0.0
 graph_result_y_i:	dq 0.0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-graph_current_x:	dq 0
+graph_current_x:	dq 0.0
 graph_xo:			dw 0
 graph_xf:			dw 0
 graph_x_step:		dq 0.0
@@ -133,12 +133,12 @@ numeric_trans_num:	dq 12.0
 numeric_remainder:	dw 0
 numeric_chars:		dw 0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-debug_test_float:	dq -12.1234567987654321
+debug_test_float:	dq -12.12345
 debug_trash:		dq 0.0
 
 inStrBuf_p:			dw 0x0
-inStrBuf:  			times 30 db 0x0
-gen_output_buff: 	times 30 db 0x0
+inStrBuf:  			times 70 db 0x0
+gen_output_buff: 	times 70 db 0x0
 
 SECTION .bss
 
@@ -151,21 +151,19 @@ global _start
 _start:
 	CLEARSCREEN
 
-	finit
-	
-	fld qword [debug_test_float]
+	finit	;TODO necessary? idk
 	mov SI, gen_output_buff
-	call FloatToString
+	push debug_test_float
+	call DoubleFloatInMemoryToHexString
+	add ESP, 2
 
 	MACRO_PRINT_STRING gen_output_buff
 	MACRO_PRINT_STRING text_ln_r
 	MACRO_INPUT_CHAR_NO_ECO
 
-
-
 ;	;DEBUG
-;	call UpdateDerivativeCoefficients
-;	call UpdateIntegralCoefficients
+	call UpdateDerivativeCoefficients
+	call UpdateIntegralCoefficients
 ;	MACRO_INPUT_CHAR_NO_ECO
 
 ;	call SolveByNewton
@@ -178,105 +176,31 @@ _start:
 
 
 
-;Parses number passed in fpu-stack. Buffer set at SI
-FloatToString:		;														F-stack:1 (signed number)
-	mov AX, word [numeric_disp_decim]
-	mov word [numeric_dec_count], AX
-    FloatToString_loop1:
-		cmp word [numeric_dec_count], 0
-		je FloatToString_loop1_end
-
-		fmul dword [graph_num_10_f]
-
-		sub word [numeric_dec_count], 1
-		jmp FloatToString_loop1
-    FloatToString_loop1_end:
-
-	fst qword [numeric_trans_num]
-	fst qword [debug_test_float]	;TODO deleteme, debug
-
-	mov AX, word [numeric_disp_decim]
-	mov word [numeric_dec_count], AX
-
-	;Number at this point is supposed to be "integer". With the variable numeric_dec_count set to number of decimals
-	ftst							;Special case: number is 0 (cmp ST(0), 0)
-	fnstsw ax						;flags to ax
-	sahf							;ax to cpu flags
-	jnz FloatToString_not_zero
-	mov [SI], byte 0x30				;Adds 0
+DoubleFloatInMemoryToHexString:;Stack:FloatAddr(NOT VALUE). Buffer in SI
+	mov DI, word [ESP+2]	;Address of number
+	mov AX, [DI+6]			;Most significant bits
+	call DoubleFloatInMemoryToHexString_Aux
+	mov [SI], byte '-'		;Spacing
 	inc SI
-	mov [SI], byte 46				;Adds .
+	mov AX, [DI+4]			;Next pair
+	call DoubleFloatInMemoryToHexString_Aux
+	mov [SI], byte '-'		;Spacing
 	inc SI
-	mov [SI], byte 0x30				;Adds 0
+	mov AX, [DI+2]			;Next pair
+	call DoubleFloatInMemoryToHexString_Aux
+	mov [SI], byte '-'		;Spacing
 	inc SI
-	jmp FloatToString_normal_exit	;goto exit
+	mov AX, [DI]			;Next pair
+	call DoubleFloatInMemoryToHexString_Aux
 
-	;###################################################################################################################
-	FloatToString_not_zero:
-	;Last comparison was cmp ST(0), 0
-	jnc FloatToString_not_negative
-	mov [SI], byte 45				;If not, add - to string buffer
+	mov [SI], byte '$'				;$-Terminate for printing
 	inc SI
-	fchs							;Make number positive for simpler operations
-	;###################################################################################################################
-	FloatToString_not_negative:
 
-	fstp qword [numeric_trans_num]		;													F-stack:0
-	mov CX, 0x0							;for counting chars pushed
+	ret
 
-	FloatToString_reverse_loop:			;Every loop shoud start with empty stack
-		fld	qword [numeric_trans_num]	;													F-stack:1(num)
-		ftst							;Have we reached 0 as base number? (cmp ST(0),0)
-		fnstsw ax						;flags to ax
-		sahf							;ax to cpu flags
-		je FloatToString_exit1			;Each iteration should come with stack clean
-
-		fstp qword [debug_trash] 		;Clean stack										F-stack:0
-		fld dword [graph_num_10_f]		;													F-stack:1 (10)
-		fld qword [numeric_trans_num]	;													F-stack:2 (num,10)
-		fprem							;													F-stack:2 (remainder,10)
-;		frndint							;Just in case
-
-		fistp word [numeric_remainder]		;Store to treat it as an integer				F-stack:1 (10)
-		add word [numeric_remainder], '0'	;Make it ascii
-		push word [numeric_remainder]
-		add CX, byte 0x1					;charsInStack++
-
-		cmp word [numeric_dec_count], 1		;It's time for decimal point?
-		jne FloatToString_exit1_no_decimal_point
-		push word 46					;Add .
-		add CX, byte 0x1					;charsInStack++
-		FloatToString_exit1_no_decimal_point:
-
-		;The reference number needs to be r-shifted by 1 digit (in decimal)
-		fld qword [numeric_trans_num]		;												F-stack:2(number,10)
-		fdivrp								;												F-stack:1(new_number)
-		frndint
-
-		fstp qword [numeric_trans_num]		;												F-stack:0
-
-		sub word [numeric_dec_count], 1		;1 less decimal remaining
-		jmp FloatToString_reverse_loop
-
-	FloatToString_exit1:
-		FloatToString_normal_loop:
-		cmp CX, 0							;Are chars still un stack?
-		je FloatToString_normal_exit
+%include "code/hex2str.asm"
 
 
-		mov AX, [ESP]						;Get it
-		mov [SI], AX						;Add it to buffer
-		inc SI
-		sub CX, 1							;charsInStack--
-		add ESP, 2							;Clean stack
-
-		jmp FloatToString_normal_loop
-
-	FloatToString_normal_exit:
-;		mov [SI], word 0			;null-terminate buffer
-;		inc SI
-		mov [SI], byte 0x24 		;$ for printing int21hs compliance
-		ret
 
 
 SolveByNewton:
@@ -1140,6 +1064,106 @@ NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, si
 		ret
 
 
+;Parses number passed in fpu-stack. Buffer set at SI
+FloatToString:						;														F-stack:1 (number with sign)
+	mov AX, word [numeric_disp_decim]
+	mov word [numeric_dec_count], AX
+    FloatToString_loop1:
+		cmp word [numeric_dec_count], 0
+		je FloatToString_loop1_end
+
+		fmul dword [graph_num_10_f]
+
+		sub word [numeric_dec_count], 1
+		jmp FloatToString_loop1
+    FloatToString_loop1_end:
+
+	fst qword [numeric_trans_num]
+	fst qword [debug_test_float]	;TODO deleteme, debug
+
+	mov AX, word [numeric_disp_decim]
+	mov word [numeric_dec_count], AX
+
+	;Number at this point is supposed to be "integer". With the variable numeric_dec_count set to number of decimals
+	ftst							;Special case: number is 0 (cmp ST(0), 0)
+	fnstsw ax						;flags to ax
+	sahf							;ax to cpu flags
+	jnz FloatToString_not_zero
+	mov [SI], byte 0x30				;Adds 0
+	inc SI
+	mov [SI], byte 46				;Adds .
+	inc SI
+	mov [SI], byte 0x30				;Adds 0
+	inc SI
+	jmp FloatToString_normal_exit	;goto exit
+
+	;###################################################################################################################
+	FloatToString_not_zero:
+	;Last comparison was cmp ST(0), 0
+	jnc FloatToString_not_negative	;If number > 0 skip this
+	mov [SI], byte 45				;If not, add - to string buffer
+	inc SI
+	fchs							;Make number positive for simpler operations
+	;###################################################################################################################
+	FloatToString_not_negative:
+	fstp qword [numeric_trans_num]		;													F-stack:0
+	mov CX, 0x0							;for counting chars pushed
+
+	FloatToString_reverse_loop:			;Every loop shoud start with empty stack
+		fld	qword [numeric_trans_num]	;													F-stack:1(num)
+		ftst							;Have we reached 0 as base number? (cmp ST(0),0)
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+		je FloatToString_exit1			;Each iteration should come with stack clean
+
+		fstp qword [debug_trash] 		;Clean stack										F-stack:0
+		fld dword [graph_num_10_f]		;													F-stack:1 (10)
+		fld qword [numeric_trans_num]	;													F-stack:2 (num,10)
+		fprem							;													F-stack:2 (remainder,10)
+;		frndint							;Just in case
+
+		fistp word [numeric_remainder]		;Store to treat it as an integer				F-stack:1 (10)
+		add word [numeric_remainder], '0'	;Make it ascii
+		push word [numeric_remainder]
+		add CX, byte 0x1					;charsInStack++
+
+		cmp word [numeric_dec_count], 1		;It's time for decimal point?
+		jne FloatToString_exit1_no_decimal_point
+		push word 46					;Add .
+		add CX, byte 0x1					;charsInStack++
+		FloatToString_exit1_no_decimal_point:
+
+		;The reference number needs to be r-shifted by 1 digit (in decimal)
+		fld qword [numeric_trans_num]		;												F-stack:2(number,10)
+		fdivrp								;												F-stack:1(new_number)
+		frndint
+
+		fstp qword [numeric_trans_num]		;												F-stack:0
+
+		sub word [numeric_dec_count], 1		;1 less decimal remaining
+		jmp FloatToString_reverse_loop
+
+	FloatToString_exit1:
+		FloatToString_normal_loop:
+		cmp CX, 0							;Are chars still un stack?
+		je FloatToString_normal_exit
+
+
+		mov AX, [ESP]						;Get it
+		mov [SI], AX						;Add it to buffer
+		inc SI
+		sub CX, 1							;charsInStack--
+		add ESP, 2							;Clean stack
+
+		jmp FloatToString_normal_loop
+
+	FloatToString_normal_exit:
+;		mov [SI], word 0			;null-terminate buffer
+;		inc SI
+		mov [SI], byte 0x24 		;$ for printing int21hs compliance
+		ret
+
+
 ;MaxCommonDivisor tested in python:
 ;if (x<y):
 ;    x,y = y,x
@@ -1149,7 +1173,6 @@ NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, si
 ;    x = y
 ;    y = n
 ;return x
-
 MaxCommonDivisor:					;STACK has both numbers
 	xor DX, DX
 	mov AX, [ESP+2]					;x  of x/y
