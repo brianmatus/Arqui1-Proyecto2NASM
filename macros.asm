@@ -339,3 +339,26 @@
 	mov [graph_y_size], AX
 %endmacro
 
+%macro MACRO_SCROLL_UP_BY 1
+	pusha
+	mov AH, 0x6    ; set function to scroll page up
+	mov AL, %1
+	mov BH, 0
+	mov CH, 0x0
+	mov CL, 0x0
+	mov DH, 29
+	mov DL, 79
+	int 10h        ; call BIOS interrupt to scroll page
+	popa
+%endmacro
+
+
+%macro MACRO_SET_CURSOR_AT 2
+	pusha
+	mov AH, 0x2		;Set Cursor Position
+	mov BH, 0x0		;Page 0 (only one in graphics mode)
+	mov DH, %1		;Row
+	mov DL, %2		;Column
+	int 0x10
+	popa
+%endmacro

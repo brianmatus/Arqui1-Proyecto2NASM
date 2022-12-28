@@ -44,6 +44,8 @@ str_iter_no:		db "Iteracion numero #","$"
 str_iter_curr_x:	db "Valor de Xn:","$"
 str_iter_next_x:	db "Valor de Xn+1:","$"
 str_iter_error:		db "Error:","$"
+str_iter_found:		db "Solucion encontrada :D","$"
+str_iter_nfound:	db "Solucion no encontrada luego de las iteraciones maximas :(","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 str_x_6:			db "x^6 ","$"
 str_x_5:			db "x^5 ","$"
@@ -53,6 +55,7 @@ str_x_2:			db "x^2 ","$"
 str_x_1:			db "x ","$"
 str_x_0:			db " ","$"
 str_int_const:		db "+C","$"
+str_deleteme:		db "+","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 options_array:		dw main_option1,main_option2,main_option3,main_option4,main_option5,main_option6,main_option7,main_option8
 text_ln_r:			db 0xA,0dh, "$"
@@ -124,7 +127,7 @@ draw_fill_rect_w:	dw 0x0
 draw_fill_rect_w_c:	dw 0x0
 draw_fill_rect_h:	dw 0x0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-numeric_max_iter:	dw 100
+numeric_max_iter:	dw 3
 numeric_cur_iter:	dw 1
 numeric_tolerance:	dq 0.00001
 numeric_limit_inf:	dw -2
@@ -134,10 +137,12 @@ numeric_disp_decim:	dw 10
 numeric_dec_count:	dw 0
 numeric_trans_num:	dq 12.0
 numeric_remainder:	dw 0
-numeric_chars:		dw 0
+numeric_error:		dq 0.0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-debug_test_float:	dq -12.12345
+debug_test_float:	dq -123.987654321
 debug_trash:		dq 0.0
+
+
 
 inStrBuf_p:			dw 0x0
 inStrBuf:  			times 70 db 0x0
@@ -157,22 +162,8 @@ _start:
 	finit	;TODO necessary? idk
 
 ;	;DEBUG
-
-
 	call UpdateDerivativeCoefficients
 	call UpdateIntegralCoefficients
-;	MACRO_INPUT_CHAR_NO_ECO
-
-	mov SI, debug_test_float
-
-	call SolveByNewton
-	mov SI, gen_output_buff
-    push graph_current_x
-    call DoubleFloatInMemoryToHexString
-    add ESP, 2
-    MACRO_PRINT_STRING gen_output_buff
-    MACRO_PRINT_STRING text_ln_r
-    MACRO_INPUT_CHAR_NO_ECO
 	;END DEBUG
 
 	call UserMainOptionInput
@@ -194,12 +185,32 @@ SolveByNewton:
 		cmp word [numeric_cur_iter], AX			;If we have reached max iterations
 		ja SolveByNewton_no_solution			;Exit without solution found
 
+		MACRO_SET_CURSOR_AT 23,0
 		;Print current iter info
+		MACRO_PRINT_STRING main_title_s
 		MACRO_PRINT_STRING str_iter_no
 		MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [numeric_cur_iter]
 		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING main_title_s
 		MACRO_PRINT_STRING text_ln_r
 
+		;####################################################################
+		MACRO_PRINT_STRING str_iter_curr_x
+		;							Print ~X
+		mov SI, gen_output_buff
+		fld qword [graph_current_x]
+		call FloatToString
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+		;							Print exact X hex
+		mov SI, gen_output_buff
+		push graph_current_x
+		call DoubleFloatInMemoryToHexString
+		add ESP, 2
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
 		call CalculateDerivativeY
 		call CalculateFunctionY
 
@@ -208,6 +219,7 @@ SolveByNewton:
 
 		fst qword [numeric_trans_num]	;Store in in tmp number
 		fabs
+		fst qword [numeric_error]		;Store the error
 		fld qword [numeric_tolerance]	;									F-stack:2
 		fcomp							;cmp TOL, error						F-stack:1
 		fnstsw ax						;flags to ax
@@ -219,11 +231,59 @@ SolveByNewton:
 		fsubr qword [graph_current_x]	;Xn - f(Xn)/f'(Xn)
 		fstp qword [graph_current_x]	;Store new value found				F-stack:0
 		add [numeric_cur_iter], word 1	;current_iter++
+
+		;####################################################################
+		MACRO_PRINT_STRING str_iter_next_x
+		;							Print ~X
+		mov SI, gen_output_buff
+		fld qword [graph_current_x]
+		call FloatToString
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+		;							Print exact X hex
+		mov SI, gen_output_buff
+		push graph_current_x
+		call DoubleFloatInMemoryToHexString
+		add ESP, 2
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+		MACRO_PRINT_STRING str_iter_error
+		;							Print ~Error
+		mov SI, gen_output_buff
+		fld qword [numeric_error]
+		call FloatToString
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+		;							Print exact Error hex
+		mov SI, gen_output_buff
+		push numeric_error
+		call DoubleFloatInMemoryToHexString
+		add ESP, 2
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+		;Scroll the screen up
+		MACRO_INPUT_CHAR_NO_ECO
+		MACRO_SCROLL_UP_BY 7
 		jmp SolveByNewton_loop
 
 	SolveByNewton_solution_found:
+	MACRO_SCROLL_UP_BY 2
+	MACRO_PRINT_STRING str_iter_found
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
 
 	SolveByNewton_no_solution:
+	MACRO_SCROLL_UP_BY 2
+	MACRO_PRINT_STRING str_iter_nfound
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
 
 	ret
 
@@ -1204,5 +1264,8 @@ MaxCommonDivisor:					;STACK has both numbers
 ;	MACRO_INPUT_CHAR_NO_ECO
 
 
-
+;fpu_floor:			dw 0x0C3F
+;fpu_round:			dw 0x037F
+;fpu_ceil:			dw 0x0E3F
+;fldcw word [fpu_round]
 
