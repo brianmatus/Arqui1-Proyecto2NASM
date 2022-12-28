@@ -45,6 +45,7 @@ str_iter_curr_x:	db "Valor de Xn:","$"
 str_iter_next_x:	db "Valor de Xn+1:","$"
 str_iter_error:		db "Error:","$"
 str_iter_found:		db "Solucion encontrada :D","$"
+str_p_iter_found:	db "Solucion exacta encontrada :D!","$"
 str_iter_nfound:	db "Solucion no encontrada luego de las iteraciones maximas :(","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 str_x_6:			db "x^6 ","$"
@@ -71,17 +72,17 @@ screenY_float:		dd 0x0
 
 function_exists:	db 1  ;TODO change to 0, for debug use already existing function
 
-coef_5: 			dw 5  ; x^5
+coef_5: 			dw 0  ; x^5
 coef_5_sign: 		db 0
-coef_4: 			dw 4  ; x^4
+coef_4: 			dw 0  ; x^4
 coef_4_sign: 		db 0
-coef_3: 			dw 9  ; x^3
-coef_3_sign: 		db 1
-coef_2: 			dw 2  ; x^2
-coef_2_sign: 		db 1
+coef_3: 			dw 1  ; x^3
+coef_3_sign: 		db 0
+coef_2: 			dw 0  ; x^2
+coef_2_sign: 		db 0
 coef_1: 			dw 1  ; x
 coef_1_sign: 		db 1
-coef_0: 			dw 1 ; constant
+coef_0: 			dw 0 ; constant
 coef_0_sign: 		db 0
 
 coef_5_d: 			dw 0  ; d/dx x^5
@@ -127,21 +128,29 @@ draw_fill_rect_w:	dw 0x0
 draw_fill_rect_w_c:	dw 0x0
 draw_fill_rect_h:	dw 0x0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-numeric_max_iter:	dw 3
+numeric_max_iter:	dw 500
 numeric_cur_iter:	dw 1
 numeric_tolerance:	dq 0.00001
 numeric_limit_inf:	dw -2
 numeric_limit_sup:	dw -1
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+numeric_sol_found:	db 0
 numeric_disp_decim:	dw 10
 numeric_dec_count:	dw 0
 numeric_trans_num:	dq 12.0
 numeric_remainder:	dw 0
 numeric_error:		dq 0.0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-debug_test_float:	dq -123.987654321
+steff_curr_x:		dq 0.0
+steff_fx:			dq 0.0
+steff_denominator:	dq 0.0
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+debug_test_float:	dq 1.12345
 debug_trash:		dq 0.0
 
+fpu_floor:			dw 0x0C3F
+fpu_round:			dw 0x037F
+fpu_ceil:			dw 0x0E3F
 
 
 inStrBuf_p:			dw 0x0
@@ -164,26 +173,43 @@ _start:
 ;	;DEBUG
 	call UpdateDerivativeCoefficients
 	call UpdateIntegralCoefficients
+
+	fldcw word [fpu_floor]
+	mov SI, gen_output_buff
+	fld qword [debug_test_float]
+	call FloatToString
+	MACRO_PRINT_STRING gen_output_buff
+	MACRO_PRINT_STRING text_ln_r
+	fldcw word [fpu_round]
+
+	MACRO_INPUT_CHAR_NO_ECO
+
+
+;	call SolveBySteffensen
+;	call SolveByNewton
+;	fld qword [debug_test_float]
 	;END DEBUG
 
 	call UserMainOptionInput
 	call ExitApplication
 
 
-
-SolveByNewton:
+SolveBySteffensen:
 	;Let initial guess be midpoint of limits
 	fild word [numeric_limit_inf]				;									F-stack:1
 	fiadd word [numeric_limit_sup]
 	fidiv dword [graph_num_2]
+	fst qword [debug_test_float]			;TODO debug deleteme
 	fstp qword [graph_current_x]				;									F-stack:0
 
 	mov word [numeric_cur_iter], 1				;Reset current iteration to 1
 
-	SolveByNewton_loop:
+	mov [numeric_sol_found], byte 0				;Solution is not found yet
+
+	SolveBySteffensen_loop:
 		mov AX, word [numeric_max_iter]			;Prepare for comparison
 		cmp word [numeric_cur_iter], AX			;If we have reached max iterations
-		ja SolveByNewton_no_solution			;Exit without solution found
+		ja SolveBySteffensen_no_solution		;Exit without solution found
 
 		MACRO_SET_CURSOR_AT 23,0
 		;Print current iter info
@@ -195,6 +221,7 @@ SolveByNewton:
 		MACRO_PRINT_STRING text_ln_r
 
 		;####################################################################
+		fldcw word [fpu_floor]
 		MACRO_PRINT_STRING str_iter_curr_x
 		;							Print ~X
 		mov SI, gen_output_buff
@@ -202,6 +229,7 @@ SolveByNewton:
 		call FloatToString
 		MACRO_PRINT_STRING gen_output_buff
 		MACRO_PRINT_STRING text_ln_r
+		fldcw word [fpu_round]
 		;####################################################################
 		;							Print exact X hex
 		mov SI, gen_output_buff
@@ -210,13 +238,39 @@ SolveByNewton:
 		add ESP, 2
 		MACRO_PRINT_STRING gen_output_buff
 		MACRO_PRINT_STRING text_ln_r
-		;####################################################################
-		call CalculateDerivativeY
+;		####################################################################
 		call CalculateFunctionY
 
-		fld qword [graph_result_y]		;f(Xn)								F-stack:1
-		fdiv qword [graph_result_y_d]	;f(Xn)/f'(Xn)
+		fld qword [graph_current_x]		;									F-stack:1
+		fstp qword [steff_curr_x]		;Backup current X before method		F-stack:0
+										;Since we will need to modify it for intermediate calculations
 
+		fld qword [graph_result_y]		;Load f(x0)							F-stack:1
+
+		;if f(x0)=0, perfect solution!
+		ftst							;cmp f(x0), error					F-stack:1
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+		je SolveBySteffensen_perfect_solution_found
+
+		fst qword [steff_fx]			;For later usage
+		fadd qword [graph_current_x]	;f(x0)+x
+
+		;For intermediate calculation of f(f(x0)+x0)
+		fstp qword [graph_current_x]	;									F-stack:0
+		call CalculateFunctionY			;calculate it
+
+		fld qword [graph_result_y]		;f(f(x0)+x0)						F-stack:1
+		fsub qword [steff_curr_x]		;f(f(x0)+x0)-x0
+		fstp qword [steff_denominator]	;Save for later						F-stack:0
+
+		fld qword [steff_fx]			;f(x)								F-stack:1
+		fmul qword [steff_fx]			;f^2(x)
+
+		fdiv qword [steff_denominator]	;f^2(x)/[f(f(x0)+x0)-x0]
+
+		;################################################################################
+		;Error calculation
 		fst qword [numeric_trans_num]	;Store in in tmp number
 		fabs
 		fst qword [numeric_error]		;Store the error
@@ -224,15 +278,18 @@ SolveByNewton:
 		fcomp							;cmp TOL, error						F-stack:1
 		fnstsw ax						;flags to ax
 		sahf							;ax to cpu flags
-		jae SolveByNewton_solution_found
+		jb SolveBySteffensen_keep_going
+		mov [numeric_sol_found], byte 1	;Solution found!
+		SolveBySteffensen_keep_going:
 		fstp qword [debug_trash]		;Trash number with abs TODO change to clean stack command
-
 		fld qword [numeric_trans_num]	;Bring back number with sign
-		fsubr qword [graph_current_x]	;Xn - f(Xn)/f'(Xn)
+		;################################################################################
+		fsubr qword [steff_curr_x]	;Xn - f(Xn)/f'(Xn)
 		fstp qword [graph_current_x]	;Store new value found				F-stack:0
-		add [numeric_cur_iter], word 1	;current_iter++
 
+		add [numeric_cur_iter], word 1	;current_iter++
 		;####################################################################
+		fldcw word [fpu_floor]
 		MACRO_PRINT_STRING str_iter_next_x
 		;							Print ~X
 		mov SI, gen_output_buff
@@ -240,6 +297,7 @@ SolveByNewton:
 		call FloatToString
 		MACRO_PRINT_STRING gen_output_buff
 		MACRO_PRINT_STRING text_ln_r
+		fldcw word [fpu_round]
 		;####################################################################
 		;							Print exact X hex
 		mov SI, gen_output_buff
@@ -249,6 +307,7 @@ SolveByNewton:
 		MACRO_PRINT_STRING gen_output_buff
 		MACRO_PRINT_STRING text_ln_r
 		;####################################################################
+		fldcw word [fpu_floor]
 		MACRO_PRINT_STRING str_iter_error
 		;							Print ~Error
 		mov SI, gen_output_buff
@@ -256,6 +315,7 @@ SolveByNewton:
 		call FloatToString
 		MACRO_PRINT_STRING gen_output_buff
 		MACRO_PRINT_STRING text_ln_r
+		fldcw word [fpu_round]
 		;####################################################################
 		;							Print exact Error hex
 		mov SI, gen_output_buff
@@ -266,26 +326,45 @@ SolveByNewton:
 		MACRO_PRINT_STRING text_ln_r
 		;####################################################################
 		;Scroll the screen up
-		MACRO_INPUT_CHAR_NO_ECO
+		MACRO_INPUT_CHAR_NO_ECO		;TODO make it user decision
 		MACRO_SCROLL_UP_BY 7
-		jmp SolveByNewton_loop
 
-	SolveByNewton_solution_found:
-	MACRO_SCROLL_UP_BY 2
+		cmp byte [numeric_sol_found], 1
+		je SolveBySteffensen_solution_found
+		jmp SolveBySteffensen_loop
+
+
+	SolveBySteffensen_perfect_solution_found:
+;	MACRO_SCROLL_UP_BY 2
+	MACRO_PRINT_STRING str_p_iter_found
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
+
+	SolveBySteffensen_solution_found:
+;	MACRO_SCROLL_UP_BY 2
 	MACRO_PRINT_STRING str_iter_found
 	MACRO_PRINT_STRING text_ln_r
 	MACRO_PRINT_STRING str_press_any
 	MACRO_INPUT_CHAR_NO_ECO
 	ret
 
-	SolveByNewton_no_solution:
-	MACRO_SCROLL_UP_BY 2
+
+
+	SolveBySteffensen_no_solution:
+;	MACRO_SCROLL_UP_BY 2
 	MACRO_PRINT_STRING str_iter_nfound
 	MACRO_PRINT_STRING text_ln_r
 	MACRO_PRINT_STRING str_press_any
 	MACRO_INPUT_CHAR_NO_ECO
 
 	ret
+
+
+
+
+
 
 DoubleFloatInMemoryToHexString:;Stack:FloatAddr(NOT VALUE). Buffer in SI
 	mov DI, word [ESP+2]	;Address of number
@@ -801,13 +880,13 @@ UserMainOptionInput:
     option_6:
     cmp al, '6'
     jne option_7
-    call SolveByNewton
+    call Input_SolveByNewton
 	jmp UserMainOptionInput
 
     option_7:
     cmp al, '7'
     jne option_8
-    call SolveBySteffensen
+    call Input_SolveBySteffensen
 	jmp UserMainOptionInput
 
     option_8:
@@ -957,8 +1036,6 @@ PrintFunctionIntegral:
 	PrintFunctionIntegral_den_is_1:
 	MACRO_PRINT_STRING str_x_6
 
-
-
 	PrintFunctionIntegral_skip_5:
 
 	cmp [coef_4], word 0
@@ -993,8 +1070,151 @@ PrintFunctionIntegral:
 	MACRO_INPUT_CHAR_NO_ECO
 	ret
 
-SolveBySteffensen:
+Input_SolveByNewton:
 	ret
+Input_SolveBySteffensen:
+	ret
+
+SolveByNewton:
+	;Let initial guess be midpoint of limits
+	fild word [numeric_limit_inf]				;									F-stack:1
+	fiadd word [numeric_limit_sup]
+	fidiv dword [graph_num_2]
+	fstp qword [graph_current_x]				;									F-stack:0
+
+	mov word [numeric_cur_iter], 1				;Reset current iteration to 1
+	cmp byte [numeric_sol_found], 0				;Set solution to not found
+	SolveByNewton_loop:
+		mov AX, word [numeric_max_iter]			;Prepare for comparison
+		cmp word [numeric_cur_iter], AX			;If we have reached max iterations
+		ja SolveByNewton_no_solution			;Exit without solution found
+
+		MACRO_SET_CURSOR_AT 23,0
+		;Print current iter info
+		MACRO_PRINT_STRING main_title_s
+		MACRO_PRINT_STRING str_iter_no
+		MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [numeric_cur_iter]
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING main_title_s
+		MACRO_PRINT_STRING text_ln_r
+
+		;####################################################################
+		fldcw word [fpu_floor]
+		MACRO_PRINT_STRING str_iter_curr_x
+		;							Print ~X
+		mov SI, gen_output_buff
+		fld qword [graph_current_x]
+		call FloatToString
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		fldcw word [fpu_round]
+		;####################################################################
+		;							Print exact X hex
+		mov SI, gen_output_buff
+		push graph_current_x
+		call DoubleFloatInMemoryToHexString
+		add ESP, 2
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+		call CalculateDerivativeY
+		call CalculateFunctionY
+
+		fld qword [graph_result_y]		;f(Xn)								F-stack:1
+		;if f(x0)=0, perfect solution!
+		ftst							;cmp f(x0), error					F-stack:1
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+		je SolveByNewton_perfect_solution_found
+
+		fdiv qword [graph_result_y_d]	;f(Xn)/f'(Xn)
+
+		fst qword [numeric_trans_num]	;Store in in tmp number
+		fabs
+		fst qword [numeric_error]		;Store the error
+		fld qword [numeric_tolerance]	;									F-stack:2
+		fcomp							;cmp TOL, error						F-stack:1
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+
+		jb SolveByNewton_solution_keep_going
+		mov [numeric_sol_found], byte 1
+
+		SolveByNewton_solution_keep_going:
+		fstp qword [debug_trash]		;Trash number with abs TODO change to clean stack command
+		fld qword [numeric_trans_num]	;Bring back number with sign
+		fsubr qword [graph_current_x]	;Xn - f(Xn)/f'(Xn)
+		fstp qword [graph_current_x]	;Store new value found				F-stack:0
+		add [numeric_cur_iter], word 1	;current_iter++
+
+		;####################################################################
+		fldcw word [fpu_floor]
+		MACRO_PRINT_STRING str_iter_next_x
+		;							Print ~X
+		mov SI, gen_output_buff
+		fld qword [graph_current_x]
+		call FloatToString
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+;		fldcw word [fpu_round]		;Commented because will be used next
+		;####################################################################
+		;							Print exact X hex
+		mov SI, gen_output_buff
+		push graph_current_x
+		call DoubleFloatInMemoryToHexString
+		add ESP, 2
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+;		fldcw word [fpu_floor]		;Already activated from above
+		MACRO_PRINT_STRING str_iter_error
+		;							Print ~Error
+		mov SI, gen_output_buff
+		fld qword [numeric_error]
+		call FloatToString
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		fldcw word [fpu_round]
+		;####################################################################
+		;							Print exact Error hex
+		mov SI, gen_output_buff
+		push numeric_error
+		call DoubleFloatInMemoryToHexString
+		add ESP, 2
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+		;Scroll the screen up
+		MACRO_INPUT_CHAR_NO_ECO
+		MACRO_SCROLL_UP_BY 7
+		cmp byte [numeric_sol_found], 1		;Have we found a solution?
+		je SolveByNewton_solution_found		;Nice!
+		jmp SolveByNewton_loop				;Keep going
+
+
+	SolveByNewton_perfect_solution_found:
+	MACRO_PRINT_STRING str_p_iter_found
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
+
+	SolveByNewton_solution_found:
+	MACRO_PRINT_STRING str_iter_found
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
+
+	SolveByNewton_no_solution:
+	MACRO_SCROLL_UP_BY 2
+	MACRO_PRINT_STRING str_iter_nfound
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+
+	ret
+
 ExitApplication:
 	mov AH, 0x4C
 	mov AL, 0x0
