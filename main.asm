@@ -41,6 +41,9 @@ str_ask_graph_der:	db "Graficar funcion derivada? (Y/n)","$"
 str_ask_graph_int:	db "Graficar funcion integral? (Y/n)","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 str_iter_no:		db "Iteracion numero #","$"
+str_iter_curr_x:	db "Valor de Xn:","$"
+str_iter_next_x:	db "Valor de Xn+1:","$"
+str_iter_error:		db "Error:","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 str_x_6:			db "x^6 ","$"
 str_x_5:			db "x^5 ","$"
@@ -121,9 +124,9 @@ draw_fill_rect_w:	dw 0x0
 draw_fill_rect_w_c:	dw 0x0
 draw_fill_rect_h:	dw 0x0
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-numeric_max_iter:	dw 1
+numeric_max_iter:	dw 100
 numeric_cur_iter:	dw 1
-numeric_tolerance:	dq 0.0000001
+numeric_tolerance:	dq 0.00001
 numeric_limit_inf:	dw -2
 numeric_limit_sup:	dw -1
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -152,29 +155,77 @@ _start:
 	CLEARSCREEN
 
 	finit	;TODO necessary? idk
-	mov SI, gen_output_buff
-	push debug_test_float
-	call DoubleFloatInMemoryToHexString
-	add ESP, 2
-
-	MACRO_PRINT_STRING gen_output_buff
-	MACRO_PRINT_STRING text_ln_r
-	MACRO_INPUT_CHAR_NO_ECO
 
 ;	;DEBUG
+
+
 	call UpdateDerivativeCoefficients
 	call UpdateIntegralCoefficients
 ;	MACRO_INPUT_CHAR_NO_ECO
 
-;	call SolveByNewton
-;	MACRO_INPUT_CHAR_NO_ECO
+	mov SI, debug_test_float
 
+	call SolveByNewton
+	mov SI, gen_output_buff
+    push graph_current_x
+    call DoubleFloatInMemoryToHexString
+    add ESP, 2
+    MACRO_PRINT_STRING gen_output_buff
+    MACRO_PRINT_STRING text_ln_r
+    MACRO_INPUT_CHAR_NO_ECO
 	;END DEBUG
 
 	call UserMainOptionInput
 	call ExitApplication
 
 
+
+SolveByNewton:
+	;Let initial guess be midpoint of limits
+	fild word [numeric_limit_inf]				;									F-stack:1
+	fiadd word [numeric_limit_sup]
+	fidiv dword [graph_num_2]
+	fstp qword [graph_current_x]				;									F-stack:0
+
+	mov word [numeric_cur_iter], 1				;Reset current iteration to 1
+
+	SolveByNewton_loop:
+		mov AX, word [numeric_max_iter]			;Prepare for comparison
+		cmp word [numeric_cur_iter], AX			;If we have reached max iterations
+		ja SolveByNewton_no_solution			;Exit without solution found
+
+		;Print current iter info
+		MACRO_PRINT_STRING str_iter_no
+		MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [numeric_cur_iter]
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+
+		call CalculateDerivativeY
+		call CalculateFunctionY
+
+		fld qword [graph_result_y]		;f(Xn)								F-stack:1
+		fdiv qword [graph_result_y_d]	;f(Xn)/f'(Xn)
+
+		fst qword [numeric_trans_num]	;Store in in tmp number
+		fabs
+		fld qword [numeric_tolerance]	;									F-stack:2
+		fcomp							;cmp TOL, error						F-stack:1
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+		jae SolveByNewton_solution_found
+		fstp qword [debug_trash]		;Trash number with abs TODO change to clean stack command
+
+		fld qword [numeric_trans_num]	;Bring back number with sign
+		fsubr qword [graph_current_x]	;Xn - f(Xn)/f'(Xn)
+		fstp qword [graph_current_x]	;Store new value found				F-stack:0
+		add [numeric_cur_iter], word 1	;current_iter++
+		jmp SolveByNewton_loop
+
+	SolveByNewton_solution_found:
+
+	SolveByNewton_no_solution:
+
+	ret
 
 DoubleFloatInMemoryToHexString:;Stack:FloatAddr(NOT VALUE). Buffer in SI
 	mov DI, word [ESP+2]	;Address of number
@@ -199,56 +250,6 @@ DoubleFloatInMemoryToHexString:;Stack:FloatAddr(NOT VALUE). Buffer in SI
 	ret
 
 %include "code/hex2str.asm"
-
-
-
-
-SolveByNewton:
-
-	;Let initial guess be midpoint of limits
-	fild word [numeric_limit_inf]				;									F-stack:1
-	fiadd word [numeric_limit_sup]
-	fidiv dword [graph_num_2]
-	fst qword [debug_test_float]
-	fstp qword [graph_current_x]				;									F-stack:0
-
-	mov word [numeric_cur_iter], 1
-
-	SolveByNewton_loop:
-		mov AX, word [numeric_max_iter]
-		cmp word [numeric_cur_iter], AX			;If we have reached max iters
-		jg SolveByNewton_no_solution			;Exit without solution found
-
-		;Print current iter info
-		MACRO_PRINT_STRING str_iter_no
-		MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [numeric_cur_iter]
-		MACRO_PRINT_STRING gen_output_buff
-		MACRO_PRINT_STRING text_ln_r
-
-		call CalculateDerivativeY
-		call CalculateFunctionY
-
-		fld qword [graph_result_y]		;f(Xn)								F-stack:1
-		fdiv qword [graph_result_y_d]	;f(Xn)/f'(Xn)
-
-		fld qword [numeric_tolerance]	;									F-stack:2
-		fcomp							;cmp TOL, error						F-stack:1
-		fnstsw ax						;flags to ax
-		sahf							;ax to cpu flags
-		ja SolveByNewton_solution_found
-
-		fsubr qword [graph_current_x]	;Xn - f(Xn)/f'(Xn)
-		add word [numeric_cur_iter], 1	;current_iter++
-		fstp qword [graph_current_x]	;									F-stack:0
-		jmp SolveByNewton_loop
-
-	SolveByNewton_solution_found:
-
-	SolveByNewton_no_solution:
-
-	ret
-
-
 
 GraphFunction:
 	CLEARSCREEN
@@ -294,7 +295,6 @@ GraphFunction:
 	mov [graph_active_int], byte 0x0
 
 	GraphFunction_int_ok:
-
 	CLEARSCREEN
 	call GraphGuideLines
 	call GraphNormalFunction
@@ -369,17 +369,17 @@ GraphNormalFunction:
 ;		MACRO_PRINT_STRING gen_output_buff
 ;		MACRO_INPUT_CHAR_NO_ECO
 		;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-		cmp [graph_active_fun], byte 0x0
+		cmp [graph_active_fun], byte 0x0	;User wanted to graph original function?
 		je GraphFunction_skip_normal
 			call CalculateFunctionY
 			call DrawFunctionPoint
 		GraphFunction_skip_normal:
-		cmp [graph_active_der], byte 0x0
+		cmp [graph_active_der], byte 0x0	;User wanted to graph derivative function?
 		je GraphFunction_skip_derivative
 			call CalculateDerivativeY
 			call DrawDerivativePoint
 		GraphFunction_skip_derivative:
-		cmp [graph_active_int], byte 0x0
+		cmp [graph_active_int], byte 0x0	;User wanted to graph integral function?
 		je GraphFunction_skip_integral
 			call CalculateIntegralY
 			call DrawIntegralPoint
@@ -416,7 +416,7 @@ DrawIntegralPoint:			;Need already set: graph_result_y, screenX
 ;	;If point is negative, the value will be greater (closer to bottom of screen)
 	fisubr word [screen_center_y]		; ST(0) = screen_center_y-ST(0)
 
-	fistp word [screenY]					;									F-Stack:0
+	fistp word [screenY]				;									F-Stack:0
 	;screenX already set by loop
 	mov word [draw_fill_rect_w], 1
 	mov word [draw_fill_rect_h], 7
@@ -1068,18 +1068,17 @@ NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, si
 FloatToString:						;														F-stack:1 (number with sign)
 	mov AX, word [numeric_disp_decim]
 	mov word [numeric_dec_count], AX
-    FloatToString_loop1:
-		cmp word [numeric_dec_count], 0
+    FloatToString_loop1:					;Multiply by 10^n, where n is desired decimals
+		cmp word [numeric_dec_count], 0		;multiplications left is 0?
 		je FloatToString_loop1_end
 
-		fmul dword [graph_num_10_f]
+		fmul dword [graph_num_10_f]			;n *= 10
 
-		sub word [numeric_dec_count], 1
+		sub word [numeric_dec_count], 1		;1 less multiplication left
 		jmp FloatToString_loop1
     FloatToString_loop1_end:
 
-	fst qword [numeric_trans_num]
-	fst qword [debug_test_float]	;TODO deleteme, debug
+	fst qword [numeric_trans_num]			;Store temporal number to modify it later
 
 	mov AX, word [numeric_disp_decim]
 	mov word [numeric_dec_count], AX
@@ -1147,7 +1146,6 @@ FloatToString:						;														F-stack:1 (number with sign)
 		FloatToString_normal_loop:
 		cmp CX, 0							;Are chars still un stack?
 		je FloatToString_normal_exit
-
 
 		mov AX, [ESP]						;Get it
 		mov [SI], AX						;Add it to buffer
