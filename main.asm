@@ -67,6 +67,10 @@ str_x_0:			db " ","$"
 str_int_const:		db "+C","$"
 str_deleteme:		db "+","$"
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+str_fx:				db "f(x)","$"
+str_dx:				db "f'(x)","$"
+str_ix:				db "f(x)dx","$"
+;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 options_array:		dw main_option1,main_option2,main_option3,main_option4,main_option5,main_option6,main_option7,main_option8
 text_ln_r:			db 0xA,0dh, "$"
 
@@ -79,7 +83,7 @@ screenX:			dw 0x0
 screenY:			dw 0x0
 screenY_float:		dd 0x0
 
-function_exists:	db 1  ;TODO change to 0, for debug use already existing function
+function_exists:	db 0
 
 coef_5: 			dw 0  ; x^5
 coef_5_sign: 		db 0
@@ -184,31 +188,11 @@ global _start
 _start:
 	CLEARSCREEN
 
-	finit	;TODO necessary? idk
+	finit	;Just in case? idk. Init FPU
 
 ;	;DEBUG
-	mov AX, [coef_5_d]
 	call UpdateDerivativeCoefficients
 	call UpdateIntegralCoefficients
-;	call PrintFunctionDerivative
-
-;
-;	call CalculateFunctionY
-;	fld qword [graph_result_y]
-
-;	call SolveByNewton
-
-	;	call AskNumericParameters
-;    	call SolveByNewton
-    ;	fldcw word [fpu_floor]
-    ;	mov SI, gen_output_buff
-    ;	fld qword [debug_test_float]
-    ;	call FloatToString
-    ;	MACRO_PRINT_STRING gen_output_buff
-    ;	MACRO_PRINT_STRING text_ln_r
-    ;	fldcw word [fpu_round]
-    ;
-    ;	MACRO_INPUT_CHAR_NO_ECO
 	;END DEBUG
 
 	call UserMainOptionInput
@@ -216,7 +200,7 @@ _start:
 
 AskNumericParameters:
 	AskNumericParameters_enter_xo:
-	MACRO_PRINT_STRING str_n_enter_xo			;Promt to enter data
+	MACRO_PRINT_STRING str_n_enter_xo			;Prompt to enter data
 	call ReadUntilLN							;Read input
 	MACRO_PARSE_STRING_BUFFER inStrBuf			;Parse the number
 	push AX										;save entered number
@@ -324,215 +308,37 @@ AskNumericParameters:
 	jmp AskNumericParameters_enter_tol_e
 	AskNumericParameters_tol_e_ok:
 	;###########################################
-	mov [numeric_tol_e], AX
-	mov [numeric_tol_e_sign], BX
+;	mov [numeric_tol_e], AX						;Store number temporarily
+;	mov [numeric_tol_e_sign], BX				;Store sign temporarily
 
 	fld1										;									F-stack:1
-	AskNumericParameters_tol_e_loop:
-		cmp AX, 0
-		je AskNumericParameters_tol_e_loop_done
-		fmul dword [graph_num_10_f]
-		dec AX
-		jmp AskNumericParameters_tol_e_loop
+	AskNumericParameters_tol_e_loop:			;Multiply by 10 until 10^|n|
+		cmp AX, 0								;Reached yet?
+		je AskNumericParameters_tol_e_loop_done	;Continue if true
+		fmul dword [graph_num_10_f]				;if not, add another *10
+		dec AX									;One less
+		jmp AskNumericParameters_tol_e_loop		;Repeat
 
 	AskNumericParameters_tol_e_loop_done:
-	cmp BX, 0
+	cmp BX, 0									;Is it positive?
 	je AskNumericParameters_tol_e_positive2
-	fld1										;									F-stack:2
-	fdivrp										;									F-stack:1
+	fld1										;If not, do x^(-1)					F-stack:2
+	fdivrp										;st(0)=1/10^|n|						F-stack:1
 	AskNumericParameters_tol_e_positive2:
-	fimul word [numeric_tol_c]
-	fstp qword [numeric_tolerance]
+	fimul word [numeric_tol_c]					;coef*10^n
+	fstp qword [numeric_tolerance]				;Store it							F-stack:0
 	;###################################################################################################################
 	;Ask if user wants pause between iterations
-	mov [numeric_pause_step], byte 0x1
-	MACRO_PRINT_STRING str_n_enter_pause
+	mov [numeric_pause_step], byte 0x1		;By default, pause is enabled
+	MACRO_PRINT_STRING str_n_enter_pause	;Prompt message
 	mov AH, 0x1								;Keyboard Input with Echo
 	int 0x21								;DOS Function Dispatcher
 	cmp AL, 110								;user entered "n"?
 	jne AskNumericParameters_pause_ok
-	mov [numeric_pause_step], byte 0x0
+	mov [numeric_pause_step], byte 0x0		;Turn it off
 
 	AskNumericParameters_pause_ok:
 	ret
-
-
-
-SolveBySteffensen:
-	;Let initial guess be midpoint of limits
-	fild word [numeric_limit_inf]				;									F-stack:1
-	fiadd word [numeric_limit_sup]
-	fidiv dword [graph_num_2]
-	fstp qword [graph_current_x]				;									F-stack:0
-
-	mov word [numeric_cur_iter], 1				;Reset current iteration to 1
-
-	mov [numeric_sol_found], byte 0				;Solution is not found yet
-
-	SolveBySteffensen_loop:
-		mov AX, word [numeric_max_iter]			;Prepare for comparison
-		cmp word [numeric_cur_iter], AX			;If we have reached max iterations
-		ja SolveBySteffensen_no_solution		;Exit without solution found
-
-		MACRO_SET_CURSOR_AT 23,0
-		;Print current iter info
-		MACRO_PRINT_STRING main_title_s
-		MACRO_PRINT_STRING str_iter_no
-		MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [numeric_cur_iter]
-		MACRO_PRINT_STRING gen_output_buff
-		MACRO_PRINT_STRING main_title_s
-		MACRO_PRINT_STRING text_ln_r
-
-		;####################################################################
-		fldcw word [fpu_floor]
-		MACRO_PRINT_STRING str_iter_curr_x
-		;							Print ~X
-		mov SI, gen_output_buff
-		fld qword [graph_current_x]
-		call FloatToString
-		MACRO_PRINT_STRING gen_output_buff
-		MACRO_PRINT_STRING text_ln_r
-		fldcw word [fpu_round]
-		;####################################################################
-		;							Print exact X hex
-		mov SI, gen_output_buff
-		push graph_current_x
-		call DoubleFloatInMemoryToHexString
-		add ESP, 2
-		MACRO_PRINT_STRING gen_output_buff
-		MACRO_PRINT_STRING text_ln_r
-;		####################################################################
-		call CalculateFunctionY
-
-		fld qword [graph_current_x]		;									F-stack:1
-		fstp qword [steff_curr_x]		;Backup current X before method		F-stack:0
-										;Since we will need to modify it for intermediate calculations
-
-		fld qword [graph_result_y]		;Load f(x0)							F-stack:1
-		fst qword [steff_fx]			;For later usage
-
-		;if f(x0)=0, perfect solution!
-		ftst							;cmp f(x0), error					F-stack:1
-		fnstsw ax						;flags to ax
-		sahf							;ax to cpu flags
-		je SolveBySteffensen_perfect_solution_found
-
-
-		fadd qword [graph_current_x]	;f(x0)+x
-
-		;For intermediate calculation of f(f(x0)+x0)
-		fstp qword [graph_current_x]	;									F-stack:0
-		call CalculateFunctionY			;calculate it
-
-		fld qword [graph_result_y]		;f(f(x0)+x0)						F-stack:1
-		fsub qword [steff_fx]		;f(f(x0)+x0)-f(x0)
-		fstp qword [steff_denominator]	;Save for later						F-stack:0
-
-		fld qword [steff_fx]			;f(x)								F-stack:1
-		fmul qword [steff_fx]			;f^2(x)
-
-		fdiv qword [steff_denominator]	;f^2(x)/[f(f(x0)+x0)-f(x0)]
-
-		;################################################################################
-		;Error calculation
-		fst qword [numeric_trans_num]	;Store in in tmp number
-		fabs
-		fst qword [numeric_error]		;Store the error
-		fld qword [numeric_tolerance]	;									F-stack:2
-		fcomp							;cmp TOL, error						F-stack:1
-		fnstsw ax						;flags to ax
-		sahf							;ax to cpu flags
-		jb SolveBySteffensen_keep_going
-		mov [numeric_sol_found], byte 1	;Solution found!
-		SolveBySteffensen_keep_going:
-		fstp qword [debug_trash]		;Trash number with abs TODO change to clean stack command
-		fld qword [numeric_trans_num]	;Bring back number with sign
-		;################################################################################
-		fsubr qword [steff_curr_x]	;Xn - Xo
-		fstp qword [graph_current_x]	;Store new value found				F-stack:0
-
-		add [numeric_cur_iter], word 1	;current_iter++
-		;####################################################################
-		fldcw word [fpu_floor]
-		MACRO_PRINT_STRING str_iter_next_x
-		;							Print ~X
-		mov SI, gen_output_buff
-		fld qword [graph_current_x]
-		call FloatToString
-		MACRO_PRINT_STRING gen_output_buff
-		MACRO_PRINT_STRING text_ln_r
-		fldcw word [fpu_round]
-		;####################################################################
-		;							Print exact X hex
-		mov SI, gen_output_buff
-		push graph_current_x
-		call DoubleFloatInMemoryToHexString
-		add ESP, 2
-		MACRO_PRINT_STRING gen_output_buff
-		MACRO_PRINT_STRING text_ln_r
-		;####################################################################
-		fldcw word [fpu_floor]
-		MACRO_PRINT_STRING str_iter_error
-		;							Print ~Error
-		mov SI, gen_output_buff
-		fld qword [numeric_error]
-		call FloatToString
-		MACRO_PRINT_STRING gen_output_buff
-		MACRO_PRINT_STRING text_ln_r
-		fldcw word [fpu_round]
-		;####################################################################
-		;							Print exact Error hex
-		mov SI, gen_output_buff
-		push numeric_error
-		call DoubleFloatInMemoryToHexString
-		add ESP, 2
-		MACRO_PRINT_STRING gen_output_buff
-		MACRO_PRINT_STRING text_ln_r
-		;####################################################################
-		;Scroll the screen up
-		MACRO_SCROLL_UP_BY 7
-
-		cmp byte [numeric_pause_step], 0
-		je SolveBySteffensen_no_pause
-		MACRO_INPUT_CHAR_NO_ECO
-		SolveBySteffensen_no_pause:
-
-		cmp byte [numeric_sol_found], 1
-		je SolveBySteffensen_solution_found
-		jmp SolveBySteffensen_loop
-
-
-	SolveBySteffensen_perfect_solution_found:
-;	MACRO_SCROLL_UP_BY 2
-	MACRO_PRINT_STRING str_iter_p_found
-	MACRO_PRINT_STRING text_ln_r
-	MACRO_PRINT_STRING str_press_any
-	MACRO_INPUT_CHAR_NO_ECO
-	ret
-
-	SolveBySteffensen_solution_found:
-;	MACRO_SCROLL_UP_BY 2
-	MACRO_PRINT_STRING str_iter_found
-	MACRO_PRINT_STRING text_ln_r
-	MACRO_PRINT_STRING str_press_any
-	MACRO_INPUT_CHAR_NO_ECO
-	ret
-
-
-
-	SolveBySteffensen_no_solution:
-;	MACRO_SCROLL_UP_BY 2
-	MACRO_PRINT_STRING str_iter_nfound
-	MACRO_PRINT_STRING text_ln_r
-	MACRO_PRINT_STRING str_press_any
-	MACRO_INPUT_CHAR_NO_ECO
-
-	ret
-
-
-
-
-
 
 DoubleFloatInMemoryToHexString:;Stack:FloatAddr(NOT VALUE). Buffer in SI
 	mov DI, word [ESP+2]	;Address of number
@@ -550,15 +356,20 @@ DoubleFloatInMemoryToHexString:;Stack:FloatAddr(NOT VALUE). Buffer in SI
 	inc SI
 	mov AX, [DI]			;Next pair
 	call DoubleFloatInMemoryToHexString_Aux
-
 	mov [SI], byte '$'				;$-Terminate for printing
 	inc SI
 
 	ret
 
-%include "code/hex2str.asm"
-
 GraphFunction:
+	cmp [function_exists], byte 0x0		;Check if function has been entered before printing something
+	jne GraphFunction_function_exists
+	MACRO_PRINT_STRING str_no_function
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
+	GraphFunction_function_exists:
+
 	CLEARSCREEN
 	;Enter Xo
 	MACRO_ASK_X0
@@ -608,8 +419,6 @@ GraphFunction:
 	MACRO_INPUT_CHAR_NO_ECO
 	ret
 
-
-
 GraphGuideLines:
 	;Horizontal one is easy
 	mov [screenY], word 239				;Prepare line to center (a little off because of width)
@@ -642,7 +451,6 @@ GraphGuideLines:
 	fidivr word [screen_size_x]		;screen_size_x/(Xf-Xo)
 	fimul word [graph_xo]			;Xo*screen_size_x/(Xf-Xo)
 	fchs							;-Xo*screen_size_x/(Xf-Xo)
-
 	fistp word [screenX]			;Position of x=0						F-Stack:0
 	mov [screenY], word 0x0			;Set to origin
 	mov word [draw_fill_rect_w], 2
@@ -650,8 +458,53 @@ GraphGuideLines:
 	push 0x7						;Gray
 	call DrawFilledRectangle
 	add ESP, 2
-
 	GraphGuideLines_done:
+
+
+	;###################################################################################################################
+	;Leyend
+
+	;Brackground
+	mov word [screenX], 563
+	mov word [screenY], 428
+	mov word [draw_fill_rect_w], 18
+	mov word [draw_fill_rect_h], 50
+	push 0x7						;Light gray
+	call DrawFilledRectangle
+	add ESP, 2
+
+	;Function
+	mov word [screenX], 565
+	mov word [screenY], 432
+	mov word [draw_fill_rect_w], 13
+	mov word [draw_fill_rect_h], 5
+	push 0x4						;Red
+	call DrawFilledRectangle
+	add ESP, 2
+	MACRO_SET_CURSOR_AT 27, 73
+	MACRO_PRINT_STRING str_fx
+
+	;Derivative
+	mov word [screenX], 565
+	mov word [screenY], 452
+	mov word [draw_fill_rect_w], 13
+	mov word [draw_fill_rect_h], 5
+	push 0x2						;Green
+	call DrawFilledRectangle
+	add ESP, 2
+	MACRO_SET_CURSOR_AT 28, 73
+	MACRO_PRINT_STRING str_dx
+
+	;Integral
+	mov word [screenX], 565
+	mov word [screenY], 467
+	mov word [draw_fill_rect_w], 13
+	mov word [draw_fill_rect_h], 5
+	push 0x1						;Blue
+	call DrawFilledRectangle
+	add ESP, 2
+	MACRO_SET_CURSOR_AT 29, 73
+	MACRO_PRINT_STRING str_ix
 	ret
 
 
@@ -665,7 +518,6 @@ GraphNormalFunction:
 	fst qword [graph_current_x]		;Store but don't pop it, we will use it in main loop
 	mov [screenX], word 0
 	;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	GraphNormalFunction_main_loop:
 		ficom word [graph_xf]			;cmp current_x, xf
 		fnstsw ax						;flags to ax
@@ -692,11 +544,9 @@ GraphNormalFunction:
 			call DrawIntegralPoint
 		GraphFunction_skip_integral:
 		;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 		fadd qword [graph_x_step]		;add x_step to float stack
 		fst qword [graph_current_x]		;store float stack top to current_x
 		add [screenX], word 1
-
 
 		jmp GraphNormalFunction_main_loop
 
@@ -712,17 +562,14 @@ DrawIntegralPoint:			;Need already set: graph_result_y, screenX
 	fnstsw ax							;flags to ax
 	sahf								;ax to cpu flags
 	ja DrawIntegralPoint_outside_range
-
 	fild word[screen_size_y]			;									F-Stack:1
 	fidiv word [graph_y_size]			;scale screen size
 	fidiv dword [graph_num_2]			;/2 since +- range
 	fmul qword [graph_result_y_i]
-
 ;	;Calculate Y position in screen
 ;	;If point is positive, the value will be smaller (closer to top of screen)
 ;	;If point is negative, the value will be greater (closer to bottom of screen)
 	fisubr word [screen_center_y]		; ST(0) = screen_center_y-ST(0)
-
 	fistp word [screenY]				;									F-Stack:0
 	;screenX already set by loop
 	mov word [draw_fill_rect_w], 1
@@ -730,7 +577,6 @@ DrawIntegralPoint:			;Need already set: graph_result_y, screenX
 	push 0x1							;Red. (R0x4:Funct G0x2:Deriv B0x1:Integ)
 	call DrawFilledRectangle
 	add ESP, 2
-
 	DrawIntegralPoint_outside_range:
 	ret
 
@@ -752,7 +598,6 @@ DrawDerivativePoint:			;Need already set: graph_result_y, screenX
 ;	;If point is positive, the value will be smaller (closer to top of screen)
 ;	;If point is negative, the value will be greater (closer to bottom of screen)
 	fisubr word [screen_center_y]		; ST(0) = screen_center_y-ST(0)
-
 	fistp word [screenY]				;									F-Stack:0
 	;screenX already set by loop
 	mov word [draw_fill_rect_w], 1
@@ -763,7 +608,6 @@ DrawDerivativePoint:			;Need already set: graph_result_y, screenX
 
 	DrawDerivativePoint_outside_range:
 	ret
-
 
 DrawFunctionPoint:			;Need already set: graph_result_y, screenX
 	fld qword [graph_result_y]			;									F-Stack:1
@@ -782,7 +626,6 @@ DrawFunctionPoint:			;Need already set: graph_result_y, screenX
 ;	;If point is positive, the value will be smaller (closer to top of screen)
 ;	;If point is negative, the value will be greater (closer to bottom of screen)
 	fisubr word [screen_center_y]		; ST(0) = screen_center_y-ST(0)
-
 	fistp word [screenY]					;									F-Stack:0
 	;screenX already set by loop
 	mov word [draw_fill_rect_w], 1
@@ -790,7 +633,6 @@ DrawFunctionPoint:			;Need already set: graph_result_y, screenX
 	push 0x4							;Red. (R0x4:Funct G0x2:Deriv B0x1:Integ)
 	call DrawFilledRectangle
 	add ESP, 2
-
 	DrawFunctionPoint_outside_range:
 	ret
 
@@ -805,7 +647,6 @@ CalculateFunctionY: ; graph_current_x needs to be set before this call
 	MACRO_FIND_FUNC_X_VALUE_OF_COEF 3
 	MACRO_FIND_FUNC_X_VALUE_OF_COEF 2
 	MACRO_FIND_FUNC_X_VALUE_OF_COEF 1
-
 	;Special case of constant coefficient
 	cmp [coef_0], word 0				;if coefficient is 0, skip
 	je CalculateFunctionY_skip_0
@@ -816,7 +657,6 @@ CalculateFunctionY: ; graph_current_x needs to be set before this call
 	je CalculateFunctionY_x_0_positive
 	fchs								;(Change ST(0) sign)
 	CalculateFunctionY_x_0_positive:
-
 	fld qword [graph_result_y]			;Load previous stored result		F-Stack:2
 	faddp								;Add last coef to result			F-Stack:1
 	fstp qword [graph_result_y]			;Store it as float					F-Stack:0
@@ -865,18 +705,14 @@ CalculateIntegralY: ; graph_current_x needs to be set before this call
 	MACRO_FIND_INTEG_X_VALUE_OF_COEF 2
 	MACRO_FIND_INTEG_X_VALUE_OF_COEF 1
 	MACRO_FIND_INTEG_X_VALUE_OF_COEF 0
-
 	;Special case of integration constant
 	cmp [coef_c], word 0					;if coefficient is 0, skip
 	je CalculateIntegralY_skip_c
-
 	fild word [coef_c]						;Convert coef to float				F-Stack:1
-
 	cmp [coef_c_sign], byte 0x0				;Its positive?
 	je CalculateIntegralY_x_c_positive
 	fchs									;(Change ST(0) sign)
 	CalculateIntegralY_x_c_positive:
-
 	fld qword [graph_result_y_i]			;Load previous stored result		F-Stack:2
 	faddp									;Add last coef to result			F-Stack:1
 	fstp qword [graph_result_y_i]			;Store it as float					F-Stack:0
@@ -902,7 +738,6 @@ EnterFunctionCoefficients:
 	mov [function_exists], byte 0x1
 	ret
 
-
 UpdateDerivativeCoefficients:
 	MACRO_UPDATE_DERIVATIVE_COEF 5
 	MACRO_UPDATE_DERIVATIVE_COEF 4
@@ -926,9 +761,7 @@ ParseString:	;[SI] as pointer,   returns: AX: result BX: sign  CX:return code
     xor cx, cx 	;
 
     mov di, 10 ; set the base to 10
-
 	mov bl, [SI] ; load the current character into bl
-
 	cmp bx, '+'
 	jne ParseString_check_minus
 	inc si ; move to the next character
@@ -939,7 +772,6 @@ ParseString:	;[SI] as pointer,   returns: AX: result BX: sign  CX:return code
 	jne ParseString_is_positive
 	push 0x1	;Flag as negative
 	inc si 		; move to the next character
-
 	jmp parse_loop
 
 	ParseString_is_positive:
@@ -966,21 +798,15 @@ ParseString:	;[SI] as pointer,   returns: AX: result BX: sign  CX:return code
 	parse_done:
 	mov CX, 0			;Exit code 0 for success, 1 for input error
 	pop BX
-;	cmp BX, 0
-;	je ParseString_not_negative_result
-;	neg AX
-;	ParseString_not_negative_result
     ret
 
     parse_error:
     mov CX, 1
-;    pop BX
 	add esp, 2
     ret
 
 
 ReadUntilLN:
-
 	mov DI, inStrBuf		;Put start of str ptr into inStrBuf_p
 	mov [inStrBuf_p], DI
 
@@ -1014,7 +840,6 @@ UserMainOptionInput:
 	call PrintMainMenu
 	mov AH, 0x8		;User input without echo
 	int 0x21		;DOS Function Dispatcher
-
 	;Compare all posible entrys
 	cmp al, '1'
 	jne option_2
@@ -1048,6 +873,13 @@ UserMainOptionInput:
     option_6:
     cmp al, '6'
     jne option_7
+	cmp [function_exists], byte 0x0		;Check if function has been entered before printing something
+	jne SolveByNewton_function_exists
+	MACRO_PRINT_STRING str_no_function
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	jmp UserMainOptionInput
+	SolveByNewton_function_exists:
     call AskNumericParameters
     call SolveByNewton
 	jmp UserMainOptionInput
@@ -1055,6 +887,13 @@ UserMainOptionInput:
     option_7:
     cmp al, '7'
     jne option_8
+    cmp [function_exists], byte 0x0		;Check if function has been entered before printing something
+	jne SolveBySteffensen_function_exists
+	MACRO_PRINT_STRING str_no_function
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	jmp UserMainOptionInput
+	SolveBySteffensen_function_exists:
     call AskNumericParameters
     call SolveBySteffensen
 	jmp UserMainOptionInput
@@ -1240,11 +1079,6 @@ PrintFunctionIntegral:
 	MACRO_INPUT_CHAR_NO_ECO
 	ret
 
-Input_SolveByNewton:
-	ret
-Input_SolveBySteffensen:
-	ret
-
 SolveByNewton:
 	;Let initial guess be midpoint of limits
 	fild word [numeric_limit_inf]				;									F-stack:1
@@ -1267,7 +1101,6 @@ SolveByNewton:
 		MACRO_PRINT_STRING gen_output_buff
 		MACRO_PRINT_STRING main_title_s
 		MACRO_PRINT_STRING text_ln_r
-
 		;####################################################################
 		fldcw word [fpu_floor]
 		MACRO_PRINT_STRING str_iter_curr_x
@@ -1298,7 +1131,7 @@ SolveByNewton:
 		sahf							;ax to cpu flags
 		jne SolveByNewton_deriv_not_zero
 		MACRO_PRINT_STRING str_iter_der_zero
-		fstp qword [debug_trash]		;Remove number TODO change to clean stack command
+		fdecstp
 		fld qword [graph_current_x]
 		fadd dword [deriv_zero_offset]
 		fstp qword [graph_current_x]
@@ -1326,7 +1159,7 @@ SolveByNewton:
 		mov [numeric_sol_found], byte 1
 
 		SolveByNewton_solution_keep_going:
-		fstp qword [debug_trash]		;Trash number with abs TODO change to clean stack command
+		fdecstp
 		fld qword [numeric_trans_num]	;Bring back number with sign
 		fsubr qword [graph_current_x]	;Xn - f(Xn)/f'(Xn)
 		fstp qword [graph_current_x]	;Store new value found				F-stack:0
@@ -1401,11 +1234,164 @@ SolveByNewton:
 	MACRO_PRINT_STRING text_ln_r
 	MACRO_PRINT_STRING str_press_any
 	MACRO_INPUT_CHAR_NO_ECO
-
 	ret
 
+SolveBySteffensen:
+	;Let initial guess be midpoint of limits
+	fild word [numeric_limit_inf]				;Xf									F-stack:1
+	fiadd word [numeric_limit_sup]				;Xf+Xo
+	fidiv dword [graph_num_2]					;(Xf+Xo)/2
+	fstp qword [graph_current_x]				;Store it							F-stack:0
 
+	mov word [numeric_cur_iter], 1				;Reset current iteration to 1
+	mov [numeric_sol_found], byte 0				;Reset solution to not found yet
 
+	SolveBySteffensen_loop:
+		mov AX, word [numeric_max_iter]			;Prepare for comparison
+		cmp word [numeric_cur_iter], AX			;If we have reached max iterations
+		ja SolveBySteffensen_no_solution		;Exit without solution found
+
+		MACRO_SET_CURSOR_AT 23,0
+		;Print current iter info
+		MACRO_PRINT_STRING main_title_s
+		MACRO_PRINT_STRING str_iter_no
+		MACRO_PARSE_NUMBER_WITHOUT_SIGN_TO_STRING [numeric_cur_iter]
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING main_title_s
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+		fldcw word [fpu_floor]		;Set FPU rounding mode to floor
+		MACRO_PRINT_STRING str_iter_curr_x
+		;							Print ~X
+		mov SI, gen_output_buff		;Prepare buffer
+		fld qword [graph_current_x]	;Set number
+		call FloatToString			;Magic magic
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		fldcw word [fpu_round]		;Set FPU rounding mode back to round
+		;####################################################################
+		;							Print exact X hex
+		mov SI, gen_output_buff				;Prepare buffer
+		push graph_current_x				;Give argument
+		call DoubleFloatInMemoryToHexString	;Magic magic
+		add ESP, 2							;Clear stack
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+;		####################################################################
+		call CalculateFunctionY
+		fld qword [graph_current_x]		;									F-stack:1
+		fstp qword [steff_curr_x]		;Backup current X before method		F-stack:0
+										;Since we will need to modify it for intermediate calculations
+
+		fld qword [graph_result_y]		;Load f(x0)							F-stack:1
+		fst qword [steff_fx]			;For later usage
+
+		;if f(x0)=0, perfect solution!
+		ftst							;cmp f(x0), error					F-stack:1
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+		je SolveBySteffensen_perfect_solution_found
+		fadd qword [graph_current_x]	;f(x0)+x
+
+		;For intermediate calculation of f(f(x0)+x0)
+		fstp qword [graph_current_x]	;									F-stack:0
+		call CalculateFunctionY			;calculate it
+
+		fld qword [graph_result_y]		;f(f(x0)+x0)						F-stack:1
+		fsub qword [steff_fx]		;f(f(x0)+x0)-f(x0)
+		fstp qword [steff_denominator]	;Save for later						F-stack:0
+
+		fld qword [steff_fx]			;f(x)								F-stack:1
+		fmul qword [steff_fx]			;f^2(x)
+		fdiv qword [steff_denominator]	;f^2(x)/[f(f(x0)+x0)-f(x0)]
+		;################################################################################
+		;Error calculation
+		fst qword [numeric_trans_num]	;Store in in tmp number
+		fabs
+		fst qword [numeric_error]		;Store the error
+		fld qword [numeric_tolerance]	;									F-stack:2
+		fcomp							;cmp TOL, error						F-stack:1
+		fnstsw ax						;flags to ax
+		sahf							;ax to cpu flags
+		jb SolveBySteffensen_keep_going
+		mov [numeric_sol_found], byte 1	;Solution found!
+		SolveBySteffensen_keep_going:
+		fdecstp
+		fld qword [numeric_trans_num]	;Bring back number with sign
+		;################################################################################
+		fsubr qword [steff_curr_x]	;Xn - Xo
+		fstp qword [graph_current_x]	;Store new value found				F-stack:0
+
+		add [numeric_cur_iter], word 1	;current_iter++
+		;####################################################################
+		fldcw word [fpu_floor]
+		MACRO_PRINT_STRING str_iter_next_x
+		;							Print ~X
+		mov SI, gen_output_buff
+		fld qword [graph_current_x]
+		call FloatToString
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		fldcw word [fpu_round]
+		;####################################################################
+		;							Print exact X hex
+		mov SI, gen_output_buff
+		push graph_current_x
+		call DoubleFloatInMemoryToHexString
+		add ESP, 2
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+		fldcw word [fpu_floor]
+		MACRO_PRINT_STRING str_iter_error
+		;							Print ~Error
+		mov SI, gen_output_buff
+		fld qword [numeric_error]
+		call FloatToString
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		fldcw word [fpu_round]
+		;####################################################################
+		;							Print exact Error hex
+		mov SI, gen_output_buff
+		push numeric_error
+		call DoubleFloatInMemoryToHexString
+		add ESP, 2
+		MACRO_PRINT_STRING gen_output_buff
+		MACRO_PRINT_STRING text_ln_r
+		;####################################################################
+		;Scroll the screen up
+		MACRO_SCROLL_UP_BY 7
+
+		cmp byte [numeric_sol_found], 1		;Solution found?
+		je SolveBySteffensen_solution_found
+
+		cmp byte [numeric_pause_step], 0	;Pause needed?
+		je SolveBySteffensen_no_pause
+		MACRO_INPUT_CHAR_NO_ECO
+		SolveBySteffensen_no_pause:
+		jmp SolveBySteffensen_loop
+
+	SolveBySteffensen_perfect_solution_found:
+	MACRO_PRINT_STRING str_iter_p_found
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
+
+	SolveBySteffensen_solution_found:
+	MACRO_PRINT_STRING str_iter_found
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
+
+	SolveBySteffensen_no_solution:
+	MACRO_PRINT_STRING str_iter_nfound
+	MACRO_PRINT_STRING text_ln_r
+	MACRO_PRINT_STRING str_press_any
+	MACRO_INPUT_CHAR_NO_ECO
+	ret
 
 DrawFilledRectangle:	;draw_fill_rect_w, draw_fill_rect_h, screenX, screenY
 	mov word [draw_fill_rect_w_c], 0		;Init current col counter to 0
@@ -1442,7 +1428,6 @@ DrawFilledRectangle:	;draw_fill_rect_w, draw_fill_rect_h, screenX, screenY
 	DrawVerticalLine_end:
 	ret
 
-
 DrawPixel:	;screenX, screenY	;Mods AH,AL,BH,CX,DX
 	mov AX, [ESP+2]
 	mov AH, 0x0C		;Write graphics pixel
@@ -1451,7 +1436,6 @@ DrawPixel:	;screenX, screenY	;Mods AH,AL,BH,CX,DX
 	mov DX, [screenY]	;Y coord
 	int 10h				;Video BIOS
 	ret
-
 
 PrintMainMenu:
 	mov AH, 0x09 			; Print String
@@ -1532,9 +1516,7 @@ NumberToString:		;SI: buffer to output. Stack(2) passed in pop order: number, si
 
 ;Parses number passed in fpu-stack. Buffer set at SI
 FloatToString:						;														F-stack:1 (number with sign)
-
 	mov word [f2s_padding_chars], 0	;Reset padding
-
 	ftst
 	fnstsw ax						;flags to ax
 	sahf							;ax to cpu flags
@@ -1580,20 +1562,17 @@ FloatToString:						;														F-stack:1 (number with sign)
 	mov [SI], byte 0x30				;Adds 0
 	inc SI
 	jmp FloatToString_normal_exit	;goto exit
-
 	;###################################################################################################################
 	FloatToString_not_zero:
 	fstp qword [numeric_trans_num]		;													F-stack:0
 	mov CX, 0							;for counting chars pushed
-
 	FloatToString_reverse_loop:			;Every loop shoud start with empty stack
 		fld	qword [numeric_trans_num]	;													F-stack:1(num)
 		ftst							;Have we reached 0 as base number? (cmp ST(0),0)
 		fnstsw ax						;flags to ax
 		sahf							;ax to cpu flags
 		je FloatToString_exit1			;Each iteration should come with stack clean
-
-		fstp qword [debug_trash] 		;TODO change to trash Clean stack					F-stack:0
+		fdecstp
 		fld dword [graph_num_10_f]		;													F-stack:1 (10)
 		fld qword [numeric_trans_num]	;													F-stack:2 (num,10)
 		fprem							;													F-stack:2 (remainder,10)
@@ -1619,7 +1598,6 @@ FloatToString:						;														F-stack:1 (number with sign)
 
 		sub word [numeric_dec_count], 1		;1 less decimal remaining
 		jmp FloatToString_reverse_loop
-
 	;#######################PADDING AGGREGATION##################################
 	FloatToString_exit1:
 	cmp word [numeric_dec_count], 0
@@ -1659,26 +1637,15 @@ FloatToString:						;														F-stack:1 (number with sign)
 		mov [SI], byte 0x24 		;$ for printing int21hs compliance
 		ret
 
-
-;MaxCommonDivisor tested in python:
-;if (x<y):
-;    x,y = y,x
-
-;while (y > 0):
-;    n = x % y
-;    x = y
-;    y = n
-;return x
+%include "code/hex2str.asm"
 MaxCommonDivisor:					;STACK has both numbers
 	xor DX, DX
 	mov AX, [ESP+2]					;x  of x/y
 	mov BX, [ESP+4]					;y of x/y
 	;remainder will be stored in DX by default
-
 	cmp AX, BX						;Swap AX if BX is bigger
 	jge MaxCommonDivisor_no_swap
 	xchg AX, BX
-
 	MaxCommonDivisor_no_swap:
 	MaxCommonDivisor_loop:
 		cmp BX, 0					;Until no remainder:
@@ -1690,20 +1657,12 @@ MaxCommonDivisor:					;STACK has both numbers
 		jmp MaxCommonDivisor_loop	;repeat
 	MaxCommonDivisor_exit:
 	ret
+;MaxCommonDivisor tested in python:
+;if (x<y):
+;    x,y = y,x
 
-
-;	mov [screenX], word 630
-;	mov [screenY], word 470
-;	mov word [draw_fill_rect_w], 10
-;	mov word [draw_fill_rect_h], 10
-;	push 0x2		;Green
-;	call DrawFilledRectangle
-;	add ESP, 2
-;	MACRO_INPUT_CHAR_NO_ECO
-
-
-;fpu_floor:			dw 0x0C3F
-;fpu_round:			dw 0x037F
-;fpu_ceil:			dw 0x0E3F
-;fldcw word [fpu_round]
-
+;while (y > 0):
+;    n = x % y
+;    x = y
+;    y = n
+;return x
