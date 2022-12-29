@@ -5,7 +5,11 @@
 	int 0x10
 %endmacro
 
-
+%macro MACRO_EXIT_APPLICATION 0
+	mov AH, 0x4C
+	mov AL, 0x0
+	int 0x21
+%endmacro
 
 %macro MACRO_INPUT_CHAR_NO_ECO 0
 	mov AH, 0x8		;User input without echo
